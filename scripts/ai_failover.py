@@ -177,15 +177,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
                                     ensure_ascii=False).encode())
 
 
+class Server(socketserver.ThreadingTCPServer):
+    # 默认 False：前一个实例被杀后，残留的 TIME_WAIT 连接会让重新 bind 报 Address in use
+    allow_reuse_address = True
+    daemon_threads = True
+
+
 def main():
     if not UPSTREAMS:
         log('没有可用上游（AI_UPSTREAMS / AI_API_BASE 都没配），退出')
         return 1
     log('监听 127.0.0.1:%d，上游顺序：%s' % (PORT, ' → '.join(
         '%s(%s)' % (u['label'], u['model']) for u in UPSTREAMS)))
-    httpd = socketserver.ThreadingTCPServer(('127.0.0.1', PORT), Handler)
-    httpd.daemon_threads = True
-    httpd.serve_forever()
+    with Server(('127.0.0.1', PORT), Handler) as httpd:
+        httpd.serve_forever()
     return 0
 
 
