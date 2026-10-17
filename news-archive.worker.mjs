@@ -67,15 +67,15 @@ async function listKeys(env) {
   return keys;
 }
 
-/** 取回报告并注入日期控件；days 可由调用方传入以复用同一次列举 */
+/** 取回报告并补上期次导航；days 可由调用方传入以复用同一次列举 */
 async function serveReport(env, key, preDays) {
   const obj = await env.ARCHIVE.get(key);
   if (!obj) return text('报告不存在', 404);
 
-  const [html_, days] = await Promise.all([obj.text(), preDays || loadDays(env)]);
-  const widget = renderWidget(days, key);
-  const cut = html_.lastIndexOf('</body>');
-  const out = cut >= 0 ? html_.slice(0, cut) + widget + html_.slice(cut) : html_ + widget;
+  const [raw, days] = await Promise.all([obj.text(), preDays || loadDays(env)]);
+  const out = isBrief(raw)
+    ? applyBriefNav(raw, days, key)
+    : insertBeforeBody(raw, renderWidget(days, key));
 
   return new Response(out, {
     headers: {
@@ -83,6 +83,140 @@ async function serveReport(env, key, preDays) {
       'cache-control': 'public, max-age=60',
     },
   });
+}
+
+function insertBeforeBody(html, extra) {
+  const cut = html.lastIndexOf('</body>');
+  return cut >= 0 ? html.slice(0, cut) + extra + html.slice(cut) : html + extra;
+}
+
+/* ══ 自建渲染层（热点简报）：模板留了占位，Worker 只负责填归档数据 ══════════ */
+const BRIEF_MARK = 'id="brief-nav"';
+
+function isBrief(html) {
+  return html.includes(BRIEF_MARK);
+}
+
+function applyBriefNav(html, days, currentKey) {
+  const nav = html.match(/<div class="issue-switch" id="brief-nav"[^>]*>[\s\S]*?<\/div>/);
+  if (!nav) return html;
+  html = html.replace(/<span id="railIssueSlot"><\/span>/,
+    '<button class="chip" id="railIssue" type="button">切换日期 / 期次</button>');
+  html = html.replace(nav[0], () => renderBriefNav(days, currentKey, nav[0]));
+  return insertBeforeBody(html, renderBriefPop(days, currentKey));
+}
+
+/** 页首那一排：更新一期 / 当期 / 更早一期，都指向归档里真实存在的期次 */
+function renderBriefNav(days, currentKey, original) {
+  const flat = [];
+  for (const d of days) for (const f of d.files) flat.push({ date: d.date, file: f });
+  const i = flat.findIndex((x) => PREFIX + x.date + '/' + x.file === currentKey);
+  const cur = i >= 0 ? flat[i] : null;
+  const older = i >= 0 && i + 1 < flat.length ? flat[i + 1] : null;
+  const newer = i > 0 ? flat[i - 1] : null;
+  const link = (x, txt) => `<a class="nav" href="/${PREFIX}${x.date}/${x.file}"` +
+    ` title="${x.date} ${label(x.file)}">${txt}</a>`;
+  const dead = (txt) => `<button class="nav" type="button" disabled aria-disabled="true">${txt}</button>`;
+  // 期次类型由渲染层写进占位里（全天汇总 / 时段汇总…），Worker 原样读回来，不自己编
+  const type = ((original.match(/<em>([^<]*)<\/em>/) || [])[1] || '').trim() || '本期';
+  const date = cur ? cur.date : '';
+  return `<div class="issue-switch" ${BRIEF_MARK} data-current="${currentKey}"` +
+    ` role="group" aria-label="切换日期与期次">
+      ${newer ? link(newer, '◀ 更新一期') : dead('◀ 更新一期')}
+      <button class="cur" id="issueBtn" type="button" aria-haspopup="dialog" aria-expanded="false">
+        ${date}<em>${type} ▾</em>
+      </button>
+      ${older ? link(older, '更早一期 ▶') : dead('更早一期 ▶')}
+    </div>`;
+}
+
+/** 日历弹层：为每个「有归档的月份」预生成格子，◀/▶ 只在真实月份之间跳 */
+function renderBriefPop(days, currentKey) {
+  const m = currentKey.match(/html\/(\d{4})-(\d{2})-(\d{2})/) || [];
+  const curY = Number(m[1]), curMo = Number(m[2]) - 1, curDay = Number(m[3]);
+  const byMonth = new Map();
+  const note = (date) => {
+    const k = date.slice(0, 7);
+    if (!byMonth.has(k)) byMonth.set(k, []);
+    byMonth.get(k).push(date);
+  };
+  days.forEach((d) => note(d.date));
+  note(`${curY}-${pad(curMo + 1)}-${pad(curDay || 1)}`);
+
+  const months = [...byMonth.keys()].sort();
+  const cal = {};
+  for (const ym of months) {
+    const [y, mo] = ym.split('-').map(Number);
+    cal[ym] = monthCells(y, mo - 1, days, ym === `${curY}-${pad(curMo + 1)}` ? curDay : -1);
+  }
+  const total = days.reduce((n, d) => n + d.files.length, 0);
+  const curIdx = months.indexOf(`${curY}-${pad(curMo + 1)}`);
+
+  return `<div class="pop" id="pop" role="dialog" aria-modal="false" aria-label="切换日期与期次">
+  <div class="pop-head">
+    <button type="button" id="calPrev" aria-label="上一月">◀</button>
+    <span class="m" id="calMonth">${curY} 年 ${curMo + 1} 月</span>
+    <button type="button" id="calNext" aria-label="下一月">▶</button>
+  </div>
+  <div class="grid7" id="calGrid">${WEEK_HEAD + cal[`${curY}-${pad(curMo + 1)}`]}</div>
+  <p class="pop-key"><i></i>实心方块 = 有归档的日期 · 共 ${days.length} 天 ${total} 期</p>
+  <p class="pop-note pretty">归档存放在 R2 的 html/&lt;日期&gt;/&lt;时刻&gt;.html；一天多次抓取会并列多期，点日期进当天最新一期。</p>
+  <p class="pop-live" id="calLive" aria-live="polite"></p>
+</div>
+<script>
+(function(){
+  var CAL=${JSON.stringify(cal)}, MO=${JSON.stringify(months)}, k=${curIdx};
+  var pop=document.getElementById("pop"), grid=document.getElementById("calGrid"),
+      head=document.getElementById("calMonth"), live=document.getElementById("calLive");
+  var btn=document.getElementById("issueBtn"), rail=document.getElementById("railIssue");
+  var prev=document.getElementById("calPrev"), next=document.getElementById("calNext");
+  function open(on){pop.classList.toggle("is-open",on);
+    if(btn)btn.setAttribute("aria-expanded",String(on));}
+  function paint(){
+    var ym=MO[k], p=ym.split("-");
+    head.textContent=p[0]+" 年 "+Number(p[1])+" 月";
+    grid.innerHTML=${JSON.stringify(WEEK_HEAD)}+CAL[ym];
+    prev.disabled = k<=0; next.disabled = k>=MO.length-1;
+    live.textContent = prev.disabled && next.disabled ? "归档只覆盖这一个月" : "";
+  }
+  prev.disabled = k<=0; next.disabled = k>=MO.length-1;
+  if(btn)btn.addEventListener("click",function(){open(!pop.classList.contains("is-open"));});
+  if(rail)rail.addEventListener("click",function(){open(true);scrollTo({top:0,behavior:"auto"});});
+  prev.addEventListener("click",function(){if(k>0){k--;paint();}});
+  next.addEventListener("click",function(){if(k<MO.length-1){k++;paint();}});
+  document.addEventListener("keydown",function(e){if(e.key==="Escape")open(false);});
+  document.addEventListener("click",function(e){
+    if(pop.classList.contains("is-open")&&!pop.contains(e.target)&&
+       !e.target.closest(".issue-switch")&&e.target.id!=="railIssue")open(false);
+  });
+})();
+</script>`;
+}
+
+const WEEK_HEAD = '<div class="wd">日</div><div class="wd">一</div><div class="wd">二</div>' +
+  '<div class="wd">三</div><div class="wd">四</div><div class="wd">五</div><div class="wd">六</div>';
+
+/** 一个月的格子：有归档的日期是链接（带当期数角标），没有的按模板 nodata 样式弱化 */
+function monthCells(y, moIndex, days, curDay) {
+  const byDate = new Map(days.map((d) => [d.date, d]));
+  const first = new Date(Date.UTC(y, moIndex, 1));
+  const span = new Date(Date.UTC(y, moIndex + 1, 0)).getUTCDate();
+  let cells = '';
+  for (let i = 0; i < first.getUTCDay(); i++) cells += '<span class="day empty"></span>';
+  for (let d = 1; d <= span; d++) {
+    const iso = `${y}-${pad(moIndex + 1)}-${pad(d)}`;
+    const rec = byDate.get(iso);
+    if (!rec) { cells += `<span class="day nodata">${d}</span>`; continue; }
+    const n = rec.files.length;
+    const cls = d === curDay ? 'day today' : 'day';
+    cells += `<a class="${cls}" href="/${PREFIX}${iso}/${rec.files[0]}"` +
+      ` aria-label="${iso} 有 ${n} 期">${d}${n > 1 ? `<b>${n}</b>` : ''}</a>`;
+  }
+  return cells;
+}
+
+function pad(n) {
+  return n < 10 ? '0' + n : '' + n;
 }
 
 async function loadDays(env) {
