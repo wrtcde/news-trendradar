@@ -15,6 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PORT: "8788"
+      AI_FAILOVER_PORT: "8788"   # 代理读的是这个；与上面的 PORT 必须一致，别只靠默认值
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -35,19 +36,9 @@ jobs:
             [ -n "$ok" ]
           }
           {
-            python3 - <<'PY'
-            import json, os
-            rows = [
-                {'label': '主(故意打不通)', 'base': 'http://127.0.0.1:9/v1',
-                 'key': 'dead', 'model': 'dead', 'timeout': 5},
-                {'label': '备(真实)', 'base': os.environ['AI_FALLBACK_API_BASE'],
-                 'key': os.environ['AI_FALLBACK_API_KEY'],
-                 'model': os.environ['AI_FALLBACK_MODEL'], 'timeout': 60},
-            ]
-            with open('upstreams.json', 'w') as fh:
-                fh.write(json.dumps(rows))
-            print('上游顺序：', ' → '.join('%s(%s)' % (r['label'], r['model']) for r in rows))
-            PY
+            printf '[{"label":"主(故意打不通)","base":"http://127.0.0.1:9/v1","key":"dead","model":"dead","timeout":5},{"label":"备(真实)","base":"%s","key":"%s","model":"%s","timeout":60}]' \
+              "$AI_FALLBACK_API_BASE" "$AI_FALLBACK_API_KEY" "$AI_FALLBACK_MODEL" > upstreams.json
+            echo "上游顺序：主(故意打不通)(dead) → 备(真实)($AI_FALLBACK_MODEL)"
             export AI_UPSTREAMS="$(cat upstreams.json)"
             pkill -f ai_failover.py 2>/dev/null || true
             sleep 1
