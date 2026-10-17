@@ -239,11 +239,11 @@ svg .zone:hover .brk{opacity:1}
 .credits h2{font-family:var(--f-cjk);font-size:22px;font-weight:400;letter-spacing:.2em}
 .credits .sub{font-size:12.5px;color:var(--faint);margin-top:6px;text-wrap:pretty}
 .cred-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 44px;margin-top:16px}
-.cred{display:grid;grid-template-columns:auto minmax(0,1fr) var(--bar-max,64px) var(--cnt-w,42px);
+.cred{display:grid;grid-template-columns:auto minmax(0,1fr) 64px var(--cnt-w,42px);
   align-items:center;gap:13px;padding:10px 0;border-bottom:1px solid var(--rule);
   transition:background .2s}
 .cred:hover{background:rgba(245,239,228,.04)}
-.cred .bar{height:2px;background:var(--ember);opacity:.55}
+.cred .bar{height:2px;background:var(--ember);opacity:.55;min-width:3px}
 .cred .n{font-family:var(--f-num);font-size:13px;color:var(--ember-2);text-align:right;white-space:nowrap}
 .cred .s-name{text-align:left;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
@@ -634,12 +634,11 @@ document.querySelectorAll(".cluster").forEach(s=>io.observe(s));
 const credGrid=document.getElementById("credGrid"),counts={};
 ITEMS.forEach(i=>counts[i.s]=(counts[i.s]||0)+1);
 const maxSrc=Math.max(...Object.values(counts));
-credGrid.style.setProperty("--bar-max",maxSrc*8+"px");
 // 计数列必须等宽：否则 "24 条" 比 "4 条" 宽 7px，会把名字列挤窄、柱子轨道跟着左移
 credGrid.style.setProperty("--cnt-w",(String(maxSrc).length*8+22)+"px");
 Object.keys(counts).sort((a,b)=>counts[b]-counts[a]||SRC[a].n.localeCompare(SRC[b].n)).forEach(name=>{
   const row=document.createElement("div");row.className="cred";
-  row.innerHTML=`${stamp(name)}<span class="bar" style="width:${counts[name]*8}px"></span><span class="n">${counts[name]} 条</span>`;
+  row.innerHTML=`${stamp(name)}<span class="bar" style="width:${(counts[name]/maxSrc*100).toFixed(1)}%"></span><span class="n">${counts[name]} 条</span>`;
   row.addEventListener("mouseenter",()=>hotSource(name,true));
   row.addEventListener("mouseleave",()=>hotSource(name,false));
   credGrid.appendChild(row);
