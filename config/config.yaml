@@ -40,7 +40,7 @@ app:
 # 详细时间线图请查看 config/timeline.yaml
 # ===============================================================
 schedule:
-  enabled: false                        # 是否启用调度系统（true=启用, false=关闭，默认关闭）
+  enabled: true                        # 是否启用调度系统（true=启用, false=关闭，默认关闭）
   preset: "morning_evening"             # 预设模板名称（见上方说明）
 
 
@@ -62,7 +62,7 @@ schedule:
 #     只要 api_url 不是你自己部署的实例，都推荐配置 expected_domain
 # ===============================================================
 platforms:
-  enabled: true                         # 是否启用热榜平台抓取（true=启用, false=关闭）
+  enabled: false                         # 是否启用热榜平台抓取（true=启用, false=关闭）
   api_url: ""                            # 热榜数据 API 地址（留空使用默认地址）
                                         # 如果你自行部署了 newsnow，填入你的地址，如: https://your-domain.com/api/s
   sources:
@@ -127,26 +127,80 @@ rss:
   # - 正整数：覆盖全局设置，只推送此天数内的文章
   # - 0：禁用此频道的新鲜度过滤，推送所有文章
   feeds:
+    # ---------- 学术出版行业 / SCI 出版商 ----------
+    - id: "scholarly-kitchen"
+      name: "Scholarly Kitchen (学术出版行业)"
+      url: "https://scholarlykitchen.sspnet.org/feed/"
+
+    - id: "publishing-perspectives"
+      name: "Publishing Perspectives"
+      url: "https://publishingperspectives.com/feed/"
+
+    - id: "retraction-watch"
+      name: "Retraction Watch (撤稿观察)"
+      url: "https://retractionwatch.com/feed/"
+
+    - id: "inside-higher-ed"
+      name: "Inside Higher Ed"
+      url: "https://www.insidehighered.com/rss/feed/ihe"
+
+    - id: "sparc"
+      name: "SPARC (开放获取联盟)"
+      url: "https://sparcopen.org/feed/"
+
+    - id: "stm-assoc"
+      name: "STM Association (出版商协会)"
+      url: "https://www.stm-assoc.org/feed/"
+
+    - id: "doaj-blog"
+      name: "DOAJ Blog"
+      url: "https://blog.doaj.org/feed/"
+
+    # ---------- 期刊与科研 ----------
+    - id: "nature"
+      name: "Nature"
+      url: "https://www.nature.com/nature.rss"
+
+    - id: "science-news"
+      name: "Science 新闻"
+      url: "https://www.science.org/rss/news_current.xml"
+
+    - id: "ieee-spectrum"
+      name: "IEEE Spectrum"
+      url: "https://spectrum.ieee.org/feeds/feed.rss"
+
+    # ---------- AI ----------
     - id: "hacker-news"
       name: "Hacker News"
       url: "https://hnrss.org/frontpage"
 
-    - id: "ruanyifeng"
-      name: "阮一峰的网络日志"
-      url: "http://www.ruanyifeng.com/blog/atom.xml"
-      enabled: false                  # 禁用
-      # max_age_days: 3               # 示例：推送 3 天内的文章（更新较慢的博客）
-     
-    - id: "yahoo-finance"
-      name: "雅虎财经"
-      url: "https://finance.yahoo.com/news/rssindex"
+    - id: "openai-news"
+      name: "OpenAI News"
+      url: "https://openai.com/news/rss.xml"
 
-    # 自定义源示例
-    # - id: "custom-feed"
-    #   name: "自定义源"
-    #   url: "https://example.com/feed.xml"
-    #   enabled: false
-    #   max_age_days: 0               # 示例：禁用过滤，推送所有文章
+    - id: "deepmind-blog"
+      name: "Google DeepMind Blog"
+      url: "https://blog.google/technology/google-deepmind/rss/"
+
+    - id: "huggingface-blog"
+      name: "Hugging Face Blog"
+      url: "https://huggingface.co/blog/feed.xml"
+
+    - id: "mit-tech-review"
+      name: "MIT Technology Review"
+      url: "https://www.technologyreview.com/feed/"
+
+    - id: "verge-ai"
+      name: "The Verge AI"
+      url: "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml"
+
+    - id: "ars-technica"
+      name: "Ars Technica"
+      url: "https://feeds.arstechnica.com/arstechnica/index"
+
+    - id: "infoq-cn"
+      name: "InfoQ 中文"
+      url: "https://www.infoq.cn/feed"
 
 
 # ===============================================================
