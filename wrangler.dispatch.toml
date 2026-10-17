@@ -1,0 +1,26 @@
+name = "news-dispatch"
+main = "news-dispatch.worker.mjs"
+compatibility_date = "2025-09-01"
+
+# 外部定时器：UTC 00:10 / 12:10 = 北京时间 08:10 / 20:10
+# 故意比 GitHub 自带 schedule 晚 10 分钟——那样如果 GitHub 的调度器醒过来了，
+# Worker 会先看到「刚刚已有运行」而跳过，不会推第二条到企业微信。
+[triggers]
+crons = ["10 0,12 * * *"]
+
+[vars]
+GH_OWNER = "wrtcde"
+GH_REPO = "news-trendradar"
+GH_WORKFLOW = "crawler.yml"
+GH_REF = "master"
+GH_MINUTES = "45"
+CRON_LABEL = "08:10 / 20:10（北京时间）"
+
+# 密钥用命令注入，不写进本文件：
+#   npx wrangler secret put GH_PAT          # fine-grained PAT：只给该仓库 Actions: read/write
+#   npx wrangler secret put ALERT_WEBHOOK   # 可选：企业微信机器人地址，只在触发失败时告警
+#
+# 部署：
+#   npx wrangler deploy
+# 手动验证（等价于 cron 到点做的事）：
+#   curl -X POST https://news-dispatch.<子域>.workers.dev/dispatch
