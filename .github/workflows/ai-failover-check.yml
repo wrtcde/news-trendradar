@@ -81,11 +81,15 @@ jobs:
             echo "### Case 2"
             N=$(python3 scripts/ai_failover.py --count-upstreams)
             echo "检测到 $N 个上游"
+            echo "::notice::Case2 上游数=$N"
             [ "$N" -ge 2 ] || { echo "❌ 备用 Secrets 没配齐"; exit 1; }
             pkill -f ai_failover.py 2>/dev/null || true
             sleep 1
             nohup python3 scripts/ai_failover.py > case2.log 2>&1 &
-            wait_ready || { echo "❌ 代理没起来"; cat case2.log; exit 1; }
+            if ! wait_ready; then
+              echo "::error::Case2 代理没起来，日志尾部：$(tail -3 case2.log | tr '\n' ' ')"
+              echo "❌ 代理没起来"; cat case2.log; exit 1
+            fi
             echo "代理健康：$(curl -s "http://127.0.0.1:$PORT/healthz")"
             fails=0
             for i in 1 2 3; do
