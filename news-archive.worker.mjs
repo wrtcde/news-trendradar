@@ -26,9 +26,9 @@ export default {
     if (path === '/healthz') return text('ok');
 
     if (path === '/' || path === '/latest') {
-      const latest = await newestKey(env);
-      if (!latest) return html(WELCOME);
-      return serveReport(env, latest);
+      const days = await loadDays(env);
+      if (!days.length) return html(WELCOME);
+      return serveReport(env, PREFIX + days[0].date + '/' + days[0].files[0], days);
     }
 
     if (path.startsWith('/html/')) {
@@ -67,17 +67,12 @@ async function listKeys(env) {
   return keys;
 }
 
-async function newestKey(env) {
-  const res = await env.ARCHIVE.list({ prefix: PREFIX, limit: 1 });
-  return res.objects.length ? res.objects[0].key : null;
-}
-
-/** 取回报告并注入日期控件 */
-async function serveReport(env, key) {
+/** 取回报告并注入日期控件；days 可由调用方传入以复用同一次列举 */
+async function serveReport(env, key, preDays) {
   const obj = await env.ARCHIVE.get(key);
   if (!obj) return text('报告不存在', 404);
 
-  const [html_, days] = await Promise.all([obj.text(), loadDays(env)]);
+  const [html_, days] = await Promise.all([obj.text(), preDays || loadDays(env)]);
   const widget = renderWidget(days, key);
   const cut = html_.lastIndexOf('</body>');
   const out = cut >= 0 ? html_.slice(0, cut) + widget + html_.slice(cut) : html_ + widget;
