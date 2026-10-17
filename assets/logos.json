@@ -1,0 +1,110 @@
+[
+ {
+  "id": "ars-technica",
+  "source": "Ars Technica",
+  "file": "assets/logos/ars-technica.svg",
+  "bytes": 1042
+ },
+ {
+  "id": "deepmind-blog",
+  "source": "Google DeepMind",
+  "file": "assets/logos/deepmind-blog.svg",
+  "bytes": 741
+ },
+ {
+  "id": "doaj-blog",
+  "source": "DOAJ",
+  "file": "assets/logos/doaj-blog.png",
+  "bytes": 1077
+ },
+ {
+  "id": "hacker-news",
+  "source": "Hacker News",
+  "file": "assets/logos/hacker-news.svg",
+  "bytes": 295
+ },
+ {
+  "id": "huggingface-blog",
+  "source": "Hugging Face",
+  "file": "assets/logos/huggingface-blog.svg",
+  "bytes": 3042
+ },
+ {
+  "id": "ieee-spectrum",
+  "source": "IEEE Spectrum",
+  "file": "assets/logos/ieee-spectrum.svg",
+  "bytes": 2661
+ },
+ {
+  "id": "infoq-cn",
+  "source": "InfoQ",
+  "file": "assets/logos/infoq-cn.svg",
+  "bytes": 3057
+ },
+ {
+  "id": "inside-higher-ed",
+  "source": "Inside Higher Ed",
+  "file": "assets/logos/inside-higher-ed.png",
+  "bytes": 563
+ },
+ {
+  "id": "mit-tech-review",
+  "source": "MIT Technology Review",
+  "file": "assets/logos/mit-tech-review.png",
+  "bytes": 1640
+ },
+ {
+  "id": "nature",
+  "source": "Nature",
+  "file": "assets/logos/nature.png",
+  "bytes": 1401
+ },
+ {
+  "id": "openai-news",
+  "source": "OpenAI",
+  "file": "assets/logos/openai-news.png",
+  "bytes": 1829
+ },
+ {
+  "id": "publishing-perspectives",
+  "source": "Publishing Perspectives",
+  "file": "assets/logos/publishing-perspectives.ico",
+  "bytes": 3234
+ },
+ {
+  "id": "retraction-watch",
+  "source": "Retraction Watch",
+  "file": "assets/logos/retraction-watch.ico",
+  "bytes": 2442
+ },
+ {
+  "id": "scholarly-kitchen",
+  "source": "Scholarly Kitchen",
+  "file": "assets/logos/scholarly-kitchen.png",
+  "bytes": 2442
+ },
+ {
+  "id": "science-news",
+  "source": "Science",
+  "file": "assets/logos/science-news.png",
+  "bytes": 1741
+ },
+ {
+  "id": "sparc",
+  "source": "SPARC",
+  "file": "assets/logos/sparc.png",
+  "bytes": 647
+ },
+ {
+  "id": "stm-assoc",
+  "source": "STM Association",
+  "file": "assets/logos/stm-assoc.png",
+  "bytes": 942
+ },
+ {
+  "id": "verge-ai",
+  "source": "The Verge",
+  "file": "assets/logos/verge-ai.png",
+  "bytes": 1135
+ }
+]
