@@ -519,6 +519,10 @@ def render(path: str) -> bool:
             print('[brief] 注意：解析到 %d 条，但报告自称 RSS 命中 %s 条 + 独立区 %d 条——'
                   '上游结构可能变了，请核对' % (len(items), hit.group(1),
                                             parsed.get('standalone_added', 0)))
+    if {i['group'] for i in items} == {STANDALONE_GROUP}:
+        print('::warning::本期只剩「%s」区，AI 筛选后的 RSS 主区整段为空——'
+              '通常是 ai_filter 单批标题太多、模型返回空导致 0 匹配，'
+              '核对 config 的 ai_filter.batch_size' % STANDALONE_GROUP)
     report_date = date_from_path(path)
     gen = parse_stamp(info.get('生成时间', '') or '01-01 00:00',
                       dt.datetime.combine(report_date, dt.time(23, 59)))
