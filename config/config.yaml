@@ -85,7 +85,7 @@ rss:
   freshness_filter:
     enabled: true                     # 是否启用新鲜度过滤（true=启用, false=关闭）
 
-    max_age_days: 1                   # 最大文章年龄（天）
+    max_age_days: 2                   # 最大文章年龄（天）  # 1→2：出版类一天只发 1-2 篇，窗口太紧会被挤光
                                       # - 正整数：只推送 N 天内的文章
                                       # - 0：禁用过滤，推送所有文章
 
@@ -168,6 +168,47 @@ rss:
     - id: "infoq-cn"
       name: "InfoQ 中文"
       url: "https://www.infoq.cn/feed"
+
+    # ---------- 新增：学术出版与科研前沿（2026-10-17 逐个实测存活、当天或隔天有更新）----------
+    - id: "plos-blog"
+      name: "PLOS 官方博客"
+      url: "https://blogs.plos.org/plos/feed/"
+
+    - id: "oup-blog"
+      name: "Oxford Academic 博客"
+      url: "https://blog.oup.com/feed/"
+
+    - id: "force11"
+      name: "FORCE11 (开放科研基础设施)"
+      url: "https://www.force11.org/feed"
+
+    - id: "quanta"
+      name: "Quanta Magazine"
+      url: "https://www.quantamagazine.org/feed/"
+
+    - id: "science-news-mag"
+      name: "Science News"
+      url: "https://www.sciencenews.org/feed"
+
+    - id: "the-transmitter"
+      name: "The Transmitter (神经科学)"
+      url: "https://www.thetransmitter.org/feed/"
+
+    - id: "stat-news"
+      name: "STAT News (生物医学)"
+      url: "https://www.statnews.com/feed/"
+
+    - id: "physics-world"
+      name: "Physics World"
+      url: "https://physicsworld.com/feed/"
+
+    - id: "phys-org"
+      name: "Phys.org"
+      url: "https://phys.org/rss-feed/"
+
+    - id: "undark"
+      name: "Undark (科学深度报道)"
+      url: "https://undark.org/feed/"
 
 
 # ===============================================================
@@ -260,15 +301,19 @@ display:
                                       # 注：热点词汇统计中的新增标记🆕不受此配置影响
 
     rss: true                         # RSS 订阅区域（true=显示并分析, false=隐藏并跳过分析）
-    standalone: false                 # 独立展示区：完整热榜/RSS，不受关键词过滤（true=显示, false=隐藏）
+    standalone: true                  # 独立展示区：完整热榜/RSS，不受关键词过滤（true=显示, false=隐藏）
     ai_analysis: true                 # AI 分析区域（true=显示, false=隐藏）
 
   # 独立展示区：将指定平台/RSS 完整展示，不受关键词过滤
   # 推送展示由 regions.standalone 控制，AI 分析由 ai_analysis.include_standalone 控制
   standalone:
     platforms: ["zhihu", "wallstreetcn-hot"]     # 热榜平台 ID 列表（如 ["zhihu", "weibo"]）
-    rss_feeds: []                                # RSS 源 ID 列表（如 ["hacker-news"]）
-    max_items: 20                                # 每个源最多展示条数（0=不限制）
+    rss_feeds: [                                  # RSS 源 ID 列表：这些源每期完整展示，不参与 AI 排名竞争
+      "scholarly-kitchen", "publishing-perspectives", "retraction-watch",
+      "inside-higher-ed", "sparc", "stm-assoc", "doaj-blog",
+      "plos-blog", "oup-blog", "force11",
+    ]
+    max_items: 8                                 # 每个源最多展示条数（0=不限制）
 
 
 # ===============================================================
