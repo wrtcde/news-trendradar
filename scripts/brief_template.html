@@ -1,0 +1,643 @@
+<!--
+  热点简报 · 2026-10-17 全天汇总 · design-demos/logic1-roulette-soundviz.html
+  风格：电影感声波可视化 Cinematic Sound-Viz Dark（ElevenLabs 官网气质 + Saul Bass 片头序列，库内还原度 72%）
+
+  ── assumption（3 条）────────────────────────────────────────────
+  1) 栏目名沿用 brand-spec §4 的占位「热点简报」，不画假 logo——用排印（宋体标题字 + 宽字距）做标识；
+     页脚与全页任何位置都不出现 TrendRadar 字样。
+  2) content.json 里 26 条全部 new=true，「AI 分析：未启用」是上游生成时序造成的误导字段（brand-spec §2.4）；
+     两者信息量均为 0，所以本版不出现红色 NEW 角标，也不出现「AI 分析」状态位。
+  3) 只有 2026-10-17 一期真实数据被内联。切期次是站点一级功能，因此日历 / 前后期入口做全，
+     但未载入的日期明确标「未载入」，不伪造任何条目。另有 2 条（10-17 18:00 / 23:00，InfoQ 中文）发布时间
+     晚于汇总时刻 16:44——时间戳原样保留，分布带上用空心柱 + 图例诚实说明，不修正、不隐藏。
+
+  ── form 来自内容的哪里（一句话）───────────────────────────────
+  把这 26 条的时间戳铺进 10-16 17:00 → 10-17 23:30 这 30.5 小时窗口，本身就是一条波形：23 条挤在 12 小时里、
+  随后约 7 小时空窗、结尾只剩 3 根孤柱；脉冲与空窗由每天 08:00 / 20:00 两次抓取决定。于是柱高 = 时刻密度
+  （前后 45 分钟内的条目数）、簇切分 = 换日或间隔 > 5.5 小时、正文分节 / 顶部导航 / 竖时间轴的粗细全部由这条
+  分布带派生——是把数据自身的形状铺成页面骨架，不是把装饰性波形贴在新闻列表上。
+
+  ── 降级说明（诚实）────────────────────────────────────────────
+  不用纯 CSS 假装实时音频频谱（也不需要）：这里的「振幅」是条目密度，是数据本身，静态即可读。
+  全页唯一一处彩色渐变 = 分布带的密度包络（暖钨丝 #7d3a16 → #e2703a → #f7cf94）；
+  底色是有色相的暖墨 #131110（不是 brand-spec 点名的均匀深蓝 #0D1117），层次靠胶片颗粒 + 无色相暗角 +
+  一条贯穿正文的竖时间轴承担，无青紫霓虹 glow。
+-->
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{PAGE_TITLE}}</title>
+<meta name="generator" content="{{NAME}} · 自建渲染层（抓取与筛选仍由 TrendRadar 完成）">
+<meta name="color-scheme" content="dark">
+<style>
+/* ══ tokens ═════════════════════════════════════════════════════════ */
+:root{
+  --bg:#131110;              /* 暖墨底（R 比 B 高 3），非均匀深蓝 */
+  --bg-2:#1a1715;
+  --paper:#f5efe4;           /* 正文 · 15.6:1 */
+  --muted:#b8afa1;           /* 次要 · 8.7:1 */
+  --faint:#978e80;           /* 辅助 · 5.6:1 */
+  --dim:#8a8175;             /* 弱辅助下限 · 4.9:1（再暗就不给用）*/
+  --rule:rgba(245,239,228,.12);
+  --rule-2:rgba(245,239,228,.26);
+  --ember:#e2703a;           /* 唯一点缀色，贯穿全页 */
+  --ember-2:#f2b371;
+  --deep:#7d3a16;
+
+  --f-display:'Bahnschrift SemiBold SemiConden','Bahnschrift SemiCondensed','Bahnschrift Condensed','Bahnschrift','Arial Narrow','Helvetica Neue',sans-serif;
+  --f-cjk:'Source Han Serif SC','Noto Serif SC','Songti SC','STZhongsong','SimSun','NSimSun',serif;
+  --f-body:'PingFang SC','Microsoft YaHei','Hiragino Sans GB','Noto Sans SC','Segoe UI',system-ui,sans-serif;
+  --f-src:'Georgia','Iowan Old Style','Palatino Linotype','Times New Roman',serif;
+  --f-num:'Cascadia Mono','Consolas','SF Mono',ui-monospace,'Menlo',monospace;
+
+  --w:1240px;
+  --band-dim:0;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--paper);font-family:var(--f-body);font-size:16px;
+  line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+p,h1,h2,h3,ul,li{margin:0;padding:0;list-style:none}
+a{color:inherit;text-decoration:none}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+:focus-visible{outline:2px solid var(--ember);outline-offset:3px}
+::selection{background:rgba(226,112,58,.34)}
+.shell{width:var(--w);max-width:100%;margin:0 auto;padding:0 20px}
+.pretty{text-wrap:pretty}
+
+/* ══ 胶片层：颗粒 + 无色相暗角 ═══════════════════════════════════ */
+.grain,.vignette{position:fixed;inset:0;pointer-events:none;z-index:90}
+.grain{opacity:.055;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E")}
+.vignette{background:radial-gradient(118% 80% at 50% 4%,rgba(19,17,16,0) 40%,rgba(7,5,4,.6) 100%)}
+
+/* ══ 窄轨：分布带的压缩形态 = 全页导航 ═════════════════════════ */
+.rail{position:fixed;top:0;left:0;right:0;z-index:80;background:rgba(19,17,16,.95);
+  border-bottom:1px solid var(--rule-2);transform:translateY(-102%);
+  transition:transform .3s cubic-bezier(.22,.7,.2,1)}
+.rail.is-on{transform:none}
+.rail-in{width:var(--w);max-width:100%;margin:0 auto;padding:8px 20px 9px;
+  display:flex;align-items:center;gap:16px}
+.rail-word{font-family:var(--f-cjk);font-size:16px;letter-spacing:.2em;white-space:nowrap}
+.rail-word b{font-weight:400;color:var(--ember)}
+.rail-date{font-family:var(--f-num);font-size:12.5px;color:var(--faint);letter-spacing:.04em}
+.map{position:relative;height:26px;flex:0 0 236px;border-bottom:1px solid var(--rule-2)}
+.map i{position:absolute;bottom:0;width:2px;background:var(--paper);opacity:.55;
+  transition:opacity .2s,background .2s,box-shadow .2s}
+.map i.late{background:transparent;border:1px solid var(--ember-2);opacity:.85}
+.map i.hot{background:var(--ember);opacity:1;box-shadow:0 0 8px rgba(226,112,58,.8)}
+.map i.off{opacity:.12}
+.rail .spacer{flex:1 1 auto}
+.chip{font-family:var(--f-display);font-stretch:condensed;font-size:13.5px;letter-spacing:.06em;
+  padding:5px 11px;border:1px solid var(--rule-2);color:var(--muted);white-space:nowrap;
+  transition:color .18s,border-color .18s,background .18s,opacity .2s}
+.chip:hover{color:var(--paper);border-color:var(--faint)}
+.chip[aria-pressed=true],.chip.is-on{color:#17130f;background:var(--ember);border-color:var(--ember)}
+.chip .n{font-family:var(--f-num);font-size:12px;opacity:.78;margin-left:6px}
+.chip-row{display:flex;gap:6px;flex-wrap:wrap}
+
+/* ══ 片头 ═════════════════════════════════════════════════════════ */
+.mast-top{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;
+  padding:20px 0 10px;border-bottom:1px solid var(--rule)}
+.wordmark{display:flex;align-items:baseline;gap:15px}
+.wordmark .zh{font-family:var(--f-cjk);font-size:24px;font-weight:400;letter-spacing:.3em;white-space:nowrap}
+.wordmark .zh .dot{color:var(--ember)}
+.wordmark .tag{font-size:12.5px;color:var(--faint);letter-spacing:.12em;white-space:nowrap}
+.issue-switch{display:flex;align-items:stretch;gap:1px;border:1px solid var(--rule-2)}
+.issue-switch button{padding:7px 13px;font-size:12.5px;color:var(--muted);background:var(--bg-2);
+  transition:background .18s,color .18s}
+.issue-switch button:hover{background:#2b2420;color:var(--paper)}
+.issue-switch .cur{background:#2e251e;color:var(--paper);font-family:var(--f-num);font-size:13px;
+  min-width:196px;text-align:center}
+.issue-switch .cur em{font-style:normal;color:var(--ember-2);font-family:var(--f-body);
+  font-size:12px;margin-left:7px}
+.issue-switch .nav{font-family:var(--f-display);font-stretch:condensed;letter-spacing:.08em}
+
+.mast-meta{font-family:var(--f-num);font-size:12.5px;color:var(--faint);line-height:2;padding:10px 0 0}
+.mast-meta b{color:var(--muted);font-weight:400}
+.mast-meta .sep{color:var(--dim);padding:0 7px}
+
+/* 巨号标题：底沿压住分布带（.band 用负 margin 上顶 22px）*/
+.mast-title{display:flex;align-items:flex-end;gap:22px;margin:6px 0 0;position:relative;z-index:4}
+.mast-title .big{font-family:var(--f-display);font-weight:600;font-stretch:condensed;font-size:92px;
+  line-height:.84;letter-spacing:-.015em;font-variant-numeric:tabular-nums}
+.mast-title .big .sep{color:var(--ember)}
+.mast-title .yr{display:block;font-family:var(--f-num);font-size:12.5px;color:var(--faint);
+  letter-spacing:.24em;margin-bottom:6px}
+.mast-title .kind{font-family:var(--f-cjk);font-size:27px;letter-spacing:.08em;padding-bottom:6px}
+.mast-title .kind small{display:block;font-family:var(--f-body);font-size:13px;letter-spacing:.03em;
+  color:var(--muted);margin-top:7px;max-width:52ch;text-wrap:pretty}
+
+/* ══ 时间分布带：本页骨架 ═══════════════════════════════════════ */
+.band-wrap{margin:0;overflow-x:auto;scrollbar-width:thin}
+.band{position:relative;width:100%;min-width:1200px;height:176px;margin-top:-22px}
+.band svg{display:block;width:100%;height:176px;overflow:visible}
+.plate{position:absolute;right:44px;top:2px;z-index:6;pointer-events:none;text-align:right;
+  font-family:var(--f-display);font-stretch:condensed;font-size:34px;font-weight:600;
+  letter-spacing:.02em;font-variant-numeric:tabular-nums;color:var(--paper);opacity:var(--band-dim);
+  transform:translateY(calc((1 - var(--band-dim)) * 5px));
+  transition:opacity .3s,transform .3s;text-shadow:0 2px 12px rgba(19,17,16,.92)}
+.plate small{display:block;font-family:var(--f-body);font-stretch:normal;font-size:12.5px;
+  font-weight:400;letter-spacing:.04em;color:var(--ember-2);margin-top:2px}
+svg .env{fill:url(#spectrum);opacity:.24;filter:drop-shadow(0 -5px 13px rgba(226,112,58,.26))}
+svg .env-line{fill:none;stroke:url(#spectrum);stroke-width:1.2;opacity:.85}
+svg .hour{stroke:rgba(245,239,228,.08)}
+svg .hour2{stroke:rgba(245,239,228,.15)}
+svg .base{stroke:rgba(245,239,228,.32);stroke-width:1}
+svg .dayline{stroke:rgba(245,239,228,.28);stroke-dasharray:2 3}
+svg .crawl{stroke:var(--ember);stroke-width:1;stroke-dasharray:1 4;opacity:.55}
+svg .genline{stroke:var(--ember-2);stroke-width:1;opacity:.85}
+svg .htxt{font-family:var(--f-num);font-size:12px;fill:var(--faint);text-anchor:middle}
+svg .dtxt{font-family:var(--f-num);font-size:12px;fill:var(--muted);letter-spacing:.05em}
+svg .crawl-txt{font-family:var(--f-body);font-size:12px;fill:var(--ember);opacity:.95}
+svg .gen-txt{font-family:var(--f-body);font-size:12px;fill:var(--ember-2);text-anchor:end}
+svg .quiet{font-family:var(--f-body);font-size:12px;fill:var(--faint);text-anchor:middle}
+svg .zlbl{font-family:var(--f-display);font-stretch:condensed;font-size:14px;fill:var(--muted);
+  letter-spacing:.05em;text-anchor:middle}
+svg .zlbl tspan{font-family:var(--f-num);font-size:12px;fill:var(--faint)}
+svg .tk{opacity:calc(.5 + .5 * var(--band-dim));transition:opacity .3s;cursor:pointer}
+svg .tk .hit{fill:transparent}
+svg .tk .bar{fill:var(--paper);transition:fill .2s}
+svg .tk.late .bar{fill:rgba(226,112,58,.2);stroke:var(--ember-2);stroke-width:1}
+svg .tk:hover .bar,svg .tk.hot .bar{fill:var(--ember)}
+svg .tk:hover,svg .tk.hot{opacity:1}
+svg .tk.off{opacity:.1}
+svg .zone rect{fill:transparent;cursor:pointer;transition:fill .25s}
+svg .zone:hover rect{fill:rgba(226,112,58,.1)}
+svg .zone .brk{stroke:var(--ember);stroke-width:1.4;opacity:0;transition:opacity .25s}
+svg .zone:hover .brk{opacity:1}
+
+.cluster-nav{display:flex;gap:8px;padding:10px 0;flex-wrap:wrap}
+.band-legend{display:flex;flex-wrap:wrap;gap:4px 22px;padding:0 0 13px;font-size:12.5px;
+  color:var(--faint);border-bottom:1px solid var(--rule);text-wrap:pretty}
+.band-legend b{color:var(--muted);font-weight:400}
+.band-legend i.k{display:inline-block;width:10px;height:10px;vertical-align:-1px;margin-right:7px}
+.k-h{background:var(--paper)}
+.k-g{border:1px solid var(--ember-2)}
+.k-c{width:16px;height:0;border-top:1px dashed var(--ember);vertical-align:2px}
+
+/* ══ 分组：阅读路径 ═══════════════════════════════════════════════ */
+.toolbar{display:flex;align-items:center;gap:14px;padding:14px 0 4px;flex-wrap:wrap}
+.toolbar .lbl{font-size:12.5px;color:var(--faint);letter-spacing:.14em}
+.readout{margin-left:auto;font-family:var(--f-num);font-size:12.5px;color:var(--muted);text-wrap:pretty}
+.readout em{font-style:normal;color:var(--ember)}
+
+/* ══ 时间簇正文（band 沿页竖向展开）═════════════════════════════ */
+.cluster{margin:16px 0 0;scroll-margin-top:96px}
+.cl-head{display:flex;align-items:flex-end;gap:18px;padding:11px 0 11px;border-bottom:1px solid var(--rule-2)}
+.cl-letter{font-family:var(--f-display);font-weight:600;font-stretch:condensed;font-size:52px;
+  line-height:.78;color:var(--ember);letter-spacing:-.02em}
+.cl-id h2{font-family:var(--f-num);font-size:19px;font-weight:500;color:var(--paper)}
+.cl-id p{font-size:13px;color:var(--muted);margin-top:5px;text-wrap:pretty}
+.cl-id p .dim{color:var(--faint)}
+.cl-note{margin-left:auto;text-align:right;font-family:var(--f-num);font-size:12.5px;
+  color:var(--faint);line-height:1.8;white-space:nowrap}
+.cl-note b{color:var(--ember-2);font-weight:400}
+.rows{position:relative;padding:4px 0 2px}
+.spine{position:absolute;left:40px;top:6px;bottom:6px;transform:translateX(-50%);background:var(--rule-2)}
+.item{position:relative;display:grid;grid-template-columns:100px 36px minmax(0,1fr) 150px 206px;
+  align-items:start;padding:14px 0 15px;transition:background .2s}
+.item:hover{background:rgba(245,239,228,.04)}
+.item+.item{border-top:1px solid var(--rule)}
+.spine-dot{position:absolute;left:40px;top:0;width:0;height:0}
+.spine-dot::after{content:'';position:absolute;left:-3.5px;top:41px;width:7px;height:7px;border-radius:50%;
+  background:var(--ember);transition:transform .18s,box-shadow .18s}
+.item.late .spine-dot::after{background:var(--bg);border:1.5px solid var(--ember-2)}
+.clock{font-family:var(--f-num);font-size:12px;color:var(--faint);padding-left:52px;letter-spacing:.02em}
+.clock b{display:block;font-size:15px;font-weight:500;color:var(--paper);margin-top:3px}
+.clock .warn{color:var(--ember-2)}
+.idx{font-family:var(--f-display);font-stretch:condensed;font-size:14px;letter-spacing:.06em;
+  color:var(--dim);text-align:right;padding-top:5px;font-variant-numeric:tabular-nums}
+.main{min-width:0}
+.main .zh{font-family:var(--f-body);font-size:18.5px;font-weight:600;line-height:1.5;color:var(--paper);
+  text-wrap:pretty}
+.main .zh a:hover{color:var(--ember-2)}
+.main .arrow{color:var(--ember);font-weight:400;font-size:14px}
+.src-line{display:flex;align-items:baseline;gap:9px;margin-top:6px}
+.tagline{font-family:var(--f-num);font-size:12px;color:var(--dim);flex:0 0 auto;letter-spacing:.1em}
+.en{font-family:var(--f-src);font-size:14px;line-height:1.55;color:var(--faint);text-wrap:pretty;min-width:0}
+.flag{display:inline-block;font-size:12px;color:var(--ember);border:1px solid rgba(226,112,58,.45);
+  padding:0 6px;margin-left:9px;vertical-align:2px;font-weight:400;letter-spacing:.02em}
+.g-col{font-size:12.5px;color:var(--muted);letter-spacing:.04em;padding:6px 0 0 14px;border-left:1px solid var(--rule)}
+.s-col{display:flex;align-items:center;gap:9px;padding-top:4px;justify-content:flex-end}
+.stamp{flex:0 0 auto;width:26px;height:26px;background:var(--paper);border:1px solid #0a0806;
+  display:flex;align-items:center;justify-content:center;overflow:hidden}
+.stamp img{width:20px;height:20px;object-fit:contain;display:block}
+.stamp .mono{font-family:var(--f-src);font-size:12px;color:#1d1a17}
+.s-name{font-family:var(--f-src);font-size:13px;color:var(--muted);text-align:right;line-height:1.35}
+.item:hover .s-name,.cred:hover .s-name{color:var(--paper)}
+.item:hover .spine-dot::after{transform:scale(1.6);box-shadow:0 0 10px rgba(226,112,58,.9)}
+.is-hidden{display:none!important}
+.cl-empty{padding:12px 0 14px 100px;font-size:13px;color:var(--faint);border-top:1px solid var(--rule)}
+@keyframes flash{0%{background:rgba(226,112,58,.24)}100%{background:transparent}}
+.item.is-flash{animation:flash 1.2s ease-out}
+
+/* ══ 来源字幕（片尾演职员表）══════════════════════════════════════ */
+.credits{margin:52px 0 0;padding:22px 0 4px;border-top:1px solid var(--rule-2)}
+.credits h2{font-family:var(--f-cjk);font-size:22px;font-weight:400;letter-spacing:.2em}
+.credits .sub{font-size:12.5px;color:var(--faint);margin-top:6px;text-wrap:pretty}
+.cred-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 44px;margin-top:16px}
+.cred{display:flex;align-items:center;gap:13px;padding:10px 0;border-bottom:1px solid var(--rule);
+  transition:background .2s}
+.cred:hover{background:rgba(245,239,228,.04)}
+.cred .bar{height:2px;background:var(--ember);opacity:.55;flex:0 0 auto}
+.cred .n{margin-left:auto;font-family:var(--f-num);font-size:13px;color:var(--ember-2)}
+.cred .s-name{text-align:left}
+
+/* ══ 页脚 ═════════════════════════════════════════════════════════ */
+footer{margin-top:40px;padding:20px 0 58px;border-top:1px solid var(--rule-2)}
+.f-in{display:flex;justify-content:space-between;gap:30px;align-items:flex-start;flex-wrap:wrap}
+.f-mark{font-family:var(--f-cjk);font-size:21px;letter-spacing:.3em}
+.f-mark span{display:block;font-family:var(--f-body);font-size:12.5px;letter-spacing:.04em;
+  color:var(--faint);margin-top:9px;text-wrap:pretty}
+.f-right{font-size:12.5px;color:var(--faint);text-align:right;line-height:2;text-wrap:pretty}
+.f-right b{color:var(--muted);font-weight:400}
+
+/* ══ 期次切换弹层 ═════════════════════════════════════════════════ */
+.pop{position:fixed;z-index:100;top:60px;right:max(20px,calc(50vw - var(--w)/2));width:326px;
+  background:#1d1815;border:1px solid var(--rule-2);padding:14px 18px 16px;
+  box-shadow:0 26px 64px rgba(0,0,0,.65);display:none}
+.pop.is-open{display:block}
+.pop-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.pop-head .m{font-family:var(--f-display);font-stretch:condensed;font-size:19px;letter-spacing:.07em}
+.pop-head button{width:28px;height:26px;border:1px solid var(--rule-2);color:var(--muted);font-size:12px}
+.pop-head button:hover{color:var(--ember);border-color:var(--ember)}
+.grid7{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+.wd{text-align:center;font-family:var(--f-num);font-size:12px;color:var(--dim);padding-bottom:5px}
+.day{text-align:center;font-family:var(--f-num);font-size:13px;padding:7px 0;color:var(--muted);
+  border:1px solid transparent;transition:background .16s,color .16s}
+.day:hover{background:#2b2420;color:var(--paper)}
+.day.empty{visibility:hidden;pointer-events:none}
+.day.nodata{color:var(--dim)}
+.day.today{border-color:var(--ember);background:var(--ember);color:#17130f;font-weight:600}
+.pop-key{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12px;color:var(--faint)}
+.pop-key i{width:11px;height:11px;background:var(--ember);display:inline-block}
+.pop-note{margin-top:9px;font-size:12.5px;color:var(--faint);line-height:1.8;border-top:1px solid var(--rule);
+  padding-top:10px;text-wrap:pretty}
+.pop-note b{color:var(--muted);font-weight:400}
+.pop-live{min-height:20px;font-size:12.5px;color:var(--ember-2);margin-top:8px;text-wrap:pretty}
+
+@media (max-width:1180px){
+  :root{--w:100%}
+  .item{grid-template-columns:100px 36px minmax(0,1fr)}
+  .g-col{border-left:0;padding:10px 0 0;grid-column:3}
+  .s-col{justify-content:flex-start;grid-column:3;padding-top:3px}
+  .cred-grid{grid-template-columns:1fr 1fr}
+  .mast-title .big{font-size:66px}
+  .map,.rail-clusters,.rail-g{display:none}
+}
+@media (max-width:720px){
+  /* 分布带是 1200px 宽的可滚动图表，不提示会被当成被切坏的图 */
+  .band-wrap::after{content:"← 分布带可横向滑动";display:block;font-size:12px;
+    color:var(--faint);letter-spacing:.04em;margin-top:-14px}
+  .cred-grid{grid-template-columns:1fr}
+  .cl-note{display:none}
+  .mast-top{flex-wrap:wrap;align-items:flex-start}
+}
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  *{transition-duration:.01ms!important;animation-duration:.01ms!important}
+}
+</style>
+</head>
+<body>
+<div class="grain" aria-hidden="true"></div>
+<div class="vignette" aria-hidden="true"></div>
+
+<div class="rail" id="rail">
+  <div class="rail-in">
+    <span class="rail-word">{{NAME}}<b>·</b></span>
+    <span class="rail-date">{{DATE_ISO}}</span>
+    <div class="map" id="map" aria-hidden="true"></div>
+    <div class="chip-row rail-clusters" id="railClusters"></div>
+    <span class="spacer"></span>
+    <div class="chip-row rail-g" id="railGroups"></div>
+    <span id="railIssueSlot"></span>
+  </div>
+</div>
+
+<div class="shell">
+  <div class="mast-top">
+    <div class="wordmark">
+      <span class="zh">{{NAME}}<span class="dot">·</span></span>
+      <span class="tag">{{TAGLINE}}</span>
+    </div>
+    <!-- 期次导航由 news-archive Worker 服务端填充：它已经加载过归档清单，页面自身不必再发请求。
+         未注入时这里仍显示当期日期与期次类型，功能降级但版面不空。 -->
+    <div class="issue-switch" id="brief-nav" data-current="{{CURRENT_KEY}}" role="group" aria-label="切换日期与期次">
+      <button class="cur" type="button">{{DATE_ISO}}<em>{{REPORT_TYPE}}</em></button>
+    </div>
+  </div>
+
+  {{MAST_META}}
+
+  {{MAST_TITLE}}
+
+  <div class="band-wrap">
+    <div class="band" id="band"><div class="plate" id="plate" aria-hidden="true"></div></div>
+  </div>
+
+  <div class="cluster-nav" id="clusterNav"></div>
+  <p class="band-legend pretty">
+    <span><i class="k k-h"></i><b>柱高</b> = 该时刻前后 45 分钟内的条目数</span>
+    <span><i class="k k-c"></i><b>虚线</b> = 每天 08:00 / 20:00 抓取时刻</span>
+    {{LEGEND_LATE}}
+    <span>点柱体或簇标签跳读 · 键盘走下方簇按钮</span>
+  </p>
+
+  <nav class="toolbar" aria-label="按分组筛选">
+    <span class="lbl">分组</span>
+    <div class="chip-row" id="groups"></div>
+    <span class="readout" id="readout" aria-live="polite"></span>
+  </nav>
+</div>
+
+<noscript><div class="shell" style="padding:26px 20px;font-size:15px">
+  {{NOSCRIPT}}
+</div></noscript>
+
+<main class="shell" id="stream"></main>
+
+<section class="shell credits" aria-labelledby="credH">
+  <h2 id="credH">本期来源</h2>
+  <p class="sub">按本期条目数排列 · 标识取各来源站点官方图标，仅作署名用途 · 悬停一行可在上方分布带里定位该来源的柱子</p>
+  <div class="cred-grid" id="credGrid"></div>
+</section>
+
+<footer class="shell">
+  {{FOOTER}}
+</footer>
+
+<!-- 期次日历由 Worker 注入到 #brief-nav -->
+
+
+<script type="application/json" id="brief-data">{{DATA}}</script>
+<script>
+/* ═══ 1. 数据 ═══ 由 scripts/render_brief.py 解析 TrendRadar 报告、翻译标题后注入。
+       raw[].m = 距 model.base 的分钟数；s = 来源键；g = 分组名；zh/en = 译文与原题。 */
+const D=JSON.parse(document.getElementById("brief-data").textContent);
+const RAW=D.raw, SRC=D.src, GROUPS=D.groups, ABBR=D.abbr, M=D.model;
+
+/* ═══ 2. 时间显示 ═══ model.base 是以 Z 结尾的墙上时间，用 UTC 取值器读回即北京时间 */
+const T0=Date.parse(M.base);
+const pad2=n=>String(n).padStart(2,"0");
+const dt=m=>new Date(T0+m*60000);
+const hhmm=m=>{const d=dt(m);return pad2(d.getUTCHours())+":"+pad2(d.getUTCMinutes());};
+const dayOf=m=>{const d=dt(m);return pad2(d.getUTCMonth()+1)+"-"+pad2(d.getUTCDate());};
+const stamp2=m=>dayOf(m)+" "+hhmm(m);
+const DAY0=M.day0, GEN=M.gen, D1=M.span;
+const ITEMS=RAW.slice().sort((a,b)=>a.m-b.m||(a.zh||a.en).localeCompare(b.zh||b.en,"zh"));
+ITEMS.forEach((it,i)=>{it.id="i"+i;it.i=i;});
+
+/* ═══ 3. 时刻簇：换日 或 与上一条间隔 > model.gap 分钟 → 新簇（纯数据派生）═══ */
+const GAP=M.gap, CL=[];
+ITEMS.forEach(it=>{
+  const p=CL[CL.length-1];
+  if(!p||it.m-p.last>GAP||dayOf(it.m)!==dayOf(p.last))
+    CL.push({key:String.fromCharCode(65+CL.length),items:[it],first:it.m,last:it.m});
+  else{p.items.push(it);p.last=it.m;}
+});
+CL.forEach(c=>{c.span=c.last-c.first;c.h=c.span/60;c.rate=c.items.length/Math.max(c.h,.5);
+  c.maxGap=Math.max(...c.items.map((x,i)=>i?x.m-c.items[i-1].m:0));});
+
+/* ═══ 4. 振幅 = 密度：前后 45 分钟内的条目数 ═══ */
+const win=(m,w)=>ITEMS.reduce((n,i)=>n+(Math.abs(i.m-m)<=w?1:0),0);
+const maxB=Math.max(...ITEMS.map(i=>win(i.m,45)));
+ENV=[];
+for(let m=0;m<=D1;m+=15)ENV.push({m,c:win(m,70)});
+const maxC=Math.max(...ENV.map(e=>e.c));
+
+/* ═══ 5. 分布带 SVG ═══ */
+const BW=1200,BH=176,BASE=126,PADX=40,TOP=34;
+const X=m=>PADX+(m/D1)*(BW-2*PADX);
+const NS="http://www.w3.org/2000/svg";
+const mk=(n,a,txt)=>{const e=document.createElementNS(NS,n);for(const k in a)e.setAttribute(k,a[k]);
+  if(txt!=null)e.textContent=txt;return e;};
+const svg=mk("svg",{viewBox:`0 0 ${BW} ${BH}`,role:"img","aria-label":M.aria});
+
+const defs=mk("defs"),grad=mk("linearGradient",{id:"spectrum",x1:"0",y1:"0",x2:"1",y2:"0"});
+[[0,"#7d3a16"],[.55,"#e2703a"],[1,"#f7cf94"]].forEach(p=>grad.appendChild(mk("stop",{offset:p[0],"stop-color":p[1]})));
+defs.appendChild(grad);svg.appendChild(defs);
+
+M.ticks.forEach(t=>{
+  svg.appendChild(mk("line",{class:t.major?"hour2":"hour",x1:X(t.m),y1:18,x2:X(t.m),y2:BASE}));
+  svg.appendChild(mk("text",{class:"htxt",x:X(t.m),y:144},t.label));
+});
+svg.appendChild(mk("line",{class:"base",x1:PADX-12,y1:BASE,x2:BW-PADX+12,y2:BASE}));
+M.daymarks.forEach(d=>{
+  svg.appendChild(mk("line",{class:"dayline",x1:X(d.m),y1:14,x2:X(d.m),y2:162}));
+  svg.appendChild(mk("text",{class:"dtxt",x:X(d.m)+8,y:160},d.label));
+});
+svg.appendChild(mk("text",{class:"dtxt",x:PADX-12,y:160},M.firstDay));
+M.crawls.forEach(c=>{
+  svg.appendChild(mk("line",{class:"crawl",x1:X(c.m),y1:20,x2:X(c.m),y2:BASE}));
+  svg.appendChild(mk("text",{class:"crawl-txt",x:X(c.m)+6,y:160},c.label));
+});
+if(M.gen>=0&&M.gen<=D1){
+  svg.appendChild(mk("line",{class:"genline",x1:X(GEN),y1:20,x2:X(GEN),y2:162}));
+  svg.appendChild(mk("text",{class:"gen-txt",x:X(GEN)-6,y:116},M.genLabel));
+}
+
+const pts=ENV.map(e=>X(e.m).toFixed(1)+" "+(BASE-(e.c/maxC)*(BASE-TOP)).toFixed(1));
+svg.appendChild(mk("path",{class:"env",d:"M "+X(0)+" "+BASE+" L "+pts.join(" L ")+" L "+X(D1)+" "+BASE+" Z"}));
+svg.appendChild(mk("path",{class:"env-line",d:"M "+pts.join(" L ")}));
+
+let bg={a:0,b:0,d:0};
+for(let k=1;k<ITEMS.length;k++){const g=ITEMS[k].m-ITEMS[k-1].m;if(g>bg.d)bg={a:ITEMS[k-1].m,b:ITEMS[k].m,d:g};}
+svg.appendChild(mk("text",{class:"quiet",x:(X(bg.a)+X(bg.b))/2,y:BASE-22},
+  "空窗 "+Math.floor(bg.d/60)+" 小时 "+(bg.d%60)+" 分 · 无新增条目"));
+
+CL.forEach(c=>{
+  const x1=X(c.first)-20,x2=X(c.last)+20,g=mk("g",{class:"zone","data-cluster":c.key});
+  g.appendChild(mk("rect",{x:x1,y:0,width:x2-x1,height:BASE}));
+  g.appendChild(mk("line",{class:"brk",x1:x1,y1:19,x2:x2,y2:19}));
+  g.appendChild(mk("line",{class:"brk",x1:x1,y1:14,x2:x1,y2:22}));
+  g.appendChild(mk("line",{class:"brk",x1:x2,y1:14,x2:x2,y2:22}));
+  const lbl=mk("text",{class:"zlbl",x:(x1+x2)/2,y:32},`簇 ${c.key} · ${c.items.length} 条`);
+  lbl.appendChild(mk("tspan",{dx:"7"},hhmm(c.first)+"→"+hhmm(c.last)));
+  g.appendChild(lbl);
+  g.addEventListener("click",()=>jump("#cl-"+c.key));
+  g.addEventListener("mouseenter",()=>zoneHover(c,true));
+  g.addEventListener("mouseleave",()=>zoneHover(c,false));
+  svg.appendChild(g);
+});
+
+/* 同一分钟有多条 → 轻微左右散开，避免两根柱叠成一根 */
+const dup={},seen={};
+ITEMS.forEach(it=>dup[it.m]=(dup[it.m]||0)+1);
+ITEMS.forEach(it=>{const n=dup[it.m];seen[it.m]=seen[it.m]==null?0:seen[it.m]+1;
+  it.dx=n>1?(seen[it.m]-(n-1)/2)*5:0;});
+
+ITEMS.forEach(it=>{
+  const h=12+(win(it.m,45)/maxB)*(BASE-TOP-13);
+  const g=mk("g",{class:"tk"+(it.late?" late":""),"data-id":it.id,"data-group":it.g});
+  const ti=mk("title");ti.textContent=`${it.ts} · ${SRC[it.s].n} · ${it.zh||it.en}`;
+  g.appendChild(ti);
+  g.appendChild(mk("rect",{class:"hit",x:(X(it.m)+it.dx-5).toFixed(1),y:0,width:10,height:BASE}));
+  g.appendChild(mk("rect",{class:"bar",x:(X(it.m)+it.dx-1.25).toFixed(1),y:(BASE-h).toFixed(1),
+    width:2.5,height:h.toFixed(1)}));
+  g.addEventListener("click",()=>jump(it.id,true));
+  g.addEventListener("mouseenter",()=>link(it.id,true));
+  g.addEventListener("mouseleave",()=>link(it.id,false));
+  svg.appendChild(g);
+});
+document.getElementById("band").appendChild(svg);
+
+/* ═══ 6. 窄轨 micro-map（同一组密度值）═══ */
+const map=document.getElementById("map");
+ITEMS.forEach(it=>{
+  const b=document.createElement("i");
+  b.style.left=((it.m/D1)*232).toFixed(2)+"px";
+  b.style.height=(4+(win(it.m,45)/maxB)*21).toFixed(1)+"px";
+  if(it.late)b.classList.add("late");
+  b.dataset.id=it.id;b.dataset.group=it.g;map.appendChild(b);
+});
+
+/* ═══ 7. 正文：按时间簇展开，竖时间轴贯穿 ═══ */
+const esc=s=>s.replace(/&/g,"&amp;").replace(/</g,"&lt;");
+const stamp=name=>`<span class="stamp" aria-hidden="true">${SRC[name].d?`<img src="${SRC[name].d}" alt="">`:`<span class="mono">${SRC[name].m}</span>`}</span><span class="s-name">${SRC[name].n}</span>`;
+const dur=m=>m>=60?`${Math.floor(m/60)} 小时 ${m%60} 分`:`${m} 分`;
+const NOTE=M.clusterNotes||{};   /* 每簇一句话定性，由 Python 从数据派生 */
+const stream=document.getElementById("stream");
+
+CL.forEach(c=>{
+  const sameDay=dayOf(c.first)===dayOf(c.last);
+  const range=sameDay?`${dayOf(c.first)} ${hhmm(c.first)} → ${hhmm(c.last)}`:`${stamp2(c.first)} → ${stamp2(c.last)}`;
+  const sec=document.createElement("section");
+  sec.className="cluster";sec.id="cl-"+c.key;sec.dataset.cluster=c.key;
+  sec.innerHTML=`<div class="cl-head">
+      <span class="cl-letter">${c.key}</span>
+      <div class="cl-id"><h2>${range}</h2>
+        <p class="pretty"><span class="cn"></span><span class="dim"> · 簇内最大间隔 ${dur(c.maxGap)} · 这一段柱子的高度就是这里的密度</span></p></div>
+      <div class="cl-note">${NOTE[c.key]?NOTE[c.key]+"<br>":""}<b>${c.rate.toFixed(1)} 条 / 小时</b></div>
+    </div><div class="rows"><span class="spine" style="width:${Math.max(1,Math.min(4,Math.round(c.rate*1.1)))}px"></span></div>`;
+  sec.querySelector(".cn").textContent=`${c.items.length} 条 · 跨 ${c.h.toFixed(1)} 小时`;
+  const rows=sec.querySelector(".rows");
+  c.items.forEach(it=>{
+    const primary=it.zh||it.en,secondary=it.zh?it.en:"",noZh=!it.zh;
+    const art=document.createElement("article");
+    art.className="item"+(it.late?" late":"");
+    art.id=it.id;art.dataset.group=it.g;
+    art.innerHTML=`<span class="spine-dot"></span>
+      <div class="clock">${dayOf(it.m)}<b>${hhmm(it.m)}${it.late?' <span class="warn">↑</span>':""}</b></div>
+      <div class="idx">${String(it.i+1).padStart(2,"0")}</div>
+      <div class="main">
+        <h3 class="zh"><a href="${it.u.replace(/&/g,"&amp;")}" target="_blank" rel="noopener noreferrer">${esc(primary)}<span class="arrow"> ↗</span></a>${noZh?'<span class="flag">中译待补 · 原文直录</span>':""}</h3>
+        ${secondary?`<div class="src-line"><span class="tagline">EN</span><p class="en">${esc(secondary)}</p></div>`:""}
+      </div>
+      <div class="g-col">${it.g}</div>
+      <div class="s-col">${stamp(it.s)}</div>`;
+    art.addEventListener("mouseenter",()=>link(it.id,true));
+    art.addEventListener("mouseleave",()=>link(it.id,false));
+    rows.appendChild(art);
+  });
+  const empty=document.createElement("p");
+  empty.className="cl-empty";empty.style.display="none";empty.textContent="本簇内该分组暂无条目";
+  sec.appendChild(empty);
+  stream.appendChild(sec);
+});
+
+/* ═══ 8. 簇按钮 + 分组筛选 ═══ */
+const clusterNav=document.getElementById("clusterNav"),railClusters=document.getElementById("railClusters");
+CL.forEach(c=>{
+  [clusterNav,railClusters].forEach(box=>{
+    const b=document.createElement("button");
+    b.className="chip";b.type="button";b.dataset.cluster=c.key;
+    b.innerHTML=`簇 ${c.key}<span class="n">${c.items.length}</span>`;
+    b.title=`${stamp2(c.first)} → ${stamp2(c.last)} · ${c.h.toFixed(1)} 小时 · ${c.rate.toFixed(1)} 条/小时`;
+    b.addEventListener("click",()=>jump("#cl-"+c.key));
+    b.addEventListener("mouseenter",()=>zoneHover(c,true));
+    b.addEventListener("mouseleave",()=>zoneHover(c,false));
+    box.appendChild(b);
+  });
+});
+const groups=document.getElementById("groups"),railGroups=document.getElementById("railGroups");
+const FILTERS=[{k:"ALL",l:"全部",n:ITEMS.length}].concat(GROUPS.map(g=>({k:g,l:g,n:ITEMS.filter(i=>i.g===g).length})));
+FILTERS.forEach(o=>{
+  [groups,railGroups].forEach(box=>{
+    const b=document.createElement("button");
+    b.className="chip";b.type="button";b.dataset.g=o.k;
+    b.setAttribute("aria-pressed",String(o.k==="ALL"));
+    b.innerHTML=`${box===railGroups&&ABBR[o.l]?ABBR[o.l]:o.l}<span class="n">${o.n}</span>`;
+    b.addEventListener("click",()=>setGroup(o.k));
+    box.appendChild(b);
+  });
+});
+
+let group="ALL";
+function setGroup(g){
+  group=g;
+  document.querySelectorAll(".chip[data-g]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.g===g)));
+  let shown=0;
+  ITEMS.forEach(it=>{
+    const on=g==="ALL"||it.g===g;if(on)shown++;
+    const row=document.getElementById(it.id);if(row)row.classList.toggle("is-hidden",!on);
+    svg.querySelectorAll(`.tk[data-id="${it.id}"]`).forEach(t=>t.classList.toggle("off",!on));
+    map.querySelectorAll(`i[data-id="${it.id}"]`).forEach(t=>t.classList.toggle("off",!on));
+  });
+  const per=[];
+  CL.forEach(c=>{
+    const n=c.items.filter(i=>g==="ALL"||i.g===g).length;per.push(c.key+":"+n);
+    const sec=document.getElementById("cl-"+c.key),cn=sec.querySelector(".cn");
+    sec.querySelector(".cl-empty").style.display=n?"none":"block";
+    cn.textContent=n?`${n} 条 · 跨 ${c.h.toFixed(1)} 小时`:`该分组在本簇 0 条 · 簇内共 ${c.items.length} 条`;
+    cn.style.color=n?"":"var(--ember)";
+  });
+  document.querySelectorAll("#clusterNav .chip,#railClusters .chip").forEach(ch=>{
+    const c=CL.find(x=>x.key===ch.dataset.cluster);
+    ch.style.opacity=c.items.some(i=>g==="ALL"||i.g===g)?"1":".38";
+  });
+  document.getElementById("readout").innerHTML=
+    `${g==="ALL"?"全部分组":g} · 命中 <em>${shown}</em> / ${ITEMS.length} 条 · 簇 ${per.join(" / ")}`;
+}
+
+/* ═══ 9. 行 ↔ 柱 ↔ 时刻牌 联动 ═══ */
+const plate=document.getElementById("plate"),root=document.documentElement;
+function link(id,on){
+  svg.querySelectorAll(`.tk[data-id="${id}"]`).forEach(t=>t.classList.toggle("hot",on));
+  map.querySelectorAll(`i[data-id="${id}"]`).forEach(t=>t.classList.toggle("hot",on));
+}
+function hotSource(name,on){ITEMS.filter(i=>i.s===name).forEach(i=>link(i.id,on));}
+function zoneHover(c,on){
+  root.style.setProperty("--band-dim",on?"1":"0");
+  svg.querySelectorAll(".tk").forEach(t=>{
+    const it=ITEMS.find(x=>x.id===t.dataset.id),inZone=c.items.includes(it);
+    t.classList.toggle("off",on?!inZone:!(group==="ALL"||it.g===group));
+  });
+  plate.innerHTML=on?`${hhmm(c.first)}–${hhmm(c.last)}<small>簇 ${c.key} · ${c.items.length} 条 · ${c.h.toFixed(1)} 小时 · ${c.rate.toFixed(1)} 条/小时</small>`:"";
+}
+function jump(sel,flash){
+  const t=sel.startsWith("#")?document.querySelector(sel):document.getElementById(sel);
+  if(!t)return;
+  t.scrollIntoView({block:sel.startsWith("#cl-")?"start":"center",
+    behavior:matchMedia("(prefers-reduced-motion:reduce)").matches?"auto":"smooth"});
+  if(flash){t.classList.remove("is-flash");void t.offsetWidth;t.classList.add("is-flash");}
+}
+
+/* ═══ 10. 窄轨出现 + 当前簇 ═══ */
+const rail=document.getElementById("rail");
+const railTop=document.getElementById("band").offsetTop+200;
+addEventListener("scroll",()=>rail.classList.toggle("is-on",scrollY>railTop),{passive:true});
+const io=new IntersectionObserver(es=>es.forEach(e=>{
+  if(e.isIntersecting)document.querySelectorAll("#railClusters .chip").forEach(c=>
+    c.classList.toggle("is-on",c.dataset.cluster===e.target.dataset.cluster));
+}),{rootMargin:"-16% 0px -66% 0px"});
+document.querySelectorAll(".cluster").forEach(s=>io.observe(s));
+
+/* ═══ 11. 来源字幕：本期真实出现的来源 + 派生条目数 ═══ */
+const credGrid=document.getElementById("credGrid"),counts={};
+ITEMS.forEach(i=>counts[i.s]=(counts[i.s]||0)+1);
+Object.keys(counts).sort((a,b)=>counts[b]-counts[a]||SRC[a].n.localeCompare(SRC[b].n)).forEach(name=>{
+  const row=document.createElement("div");row.className="cred";
+  row.innerHTML=`${stamp(name)}<span class="bar" style="width:${counts[name]*8}px"></span><span class="n">${counts[name]} 条</span>`;
+  row.addEventListener("mouseenter",()=>hotSource(name,true));
+  row.addEventListener("mouseleave",()=>hotSource(name,false));
+  credGrid.appendChild(row);
+});
+
+/* ═══ 12. 初始化 ═══ */
+setGroup("ALL");
+</script>
+</body>
+</html>
