@@ -168,21 +168,27 @@ jobs:
           S3_REGION: ${{ secrets.S3_REGION }}
           GITHUB_ACTIONS: true
         run: uv run python -m trendradar
-      - name: Make report bilingual
+      - name: Render 热点简报 design
         if: success()
         env:
           AI_API_KEY: ${{ secrets.AI_API_KEY }}
           AI_MODEL: ${{ secrets.AI_MODEL }}
           AI_API_BASE: ${{ secrets.AI_API_BASE }}
+          BRIEF_NAME: ${{ vars.BRIEF_NAME }}
+          BRIEF_TAG: ${{ vars.BRIEF_TAG }}
         run: |
           shopt -s nullglob
-          files=(index.html output/html/latest/*.html output/html/*/*.html)
+          files=()
+          for f in output/html/*/*.html; do
+            case "$f" in output/html/latest/*) continue ;; esac
+            files+=("$f")
+          done
           if [ ${#files[@]} -eq 0 ]; then
-            echo "no HTML report found, skipping bilingual step"
+            echo "no dated HTML report found, skipping render step"
             exit 0
           fi
-          echo "待处理文件: ${files[*]}"
-          uv run python scripts/bilingual_report.py "${files[@]}"
+          echo "待重渲染文件: ${files[*]}"
+          uv run python scripts/render_brief.py "${files[@]}" || echo "::warning::渲染层未生效，本次沿用 TrendRadar 原版报告"
       - name: Upload HTML archive to R2
         if: success()
         env:
