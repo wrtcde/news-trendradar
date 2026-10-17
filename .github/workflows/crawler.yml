@@ -181,7 +181,7 @@ jobs:
             case "$rel" in html/latest/*) continue ;;
             esac
             echo "uploading archive: $rel"
-            npx --yes wrangler@4 r2 object put "trendradar-html/$rel" --file="$f" --content-type "text/html; charset=utf-8"
+            npx --yes wrangler@4 r2 object put "trendradar-html/$rel" --file="$f" --content-type "text/html; charset=utf-8" --remote
             count=$((count + 1))
           done
           echo "HTML archive uploaded: $count file(s)"
