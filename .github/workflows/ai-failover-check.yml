@@ -26,6 +26,14 @@ jobs:
           AI_FALLBACK_MODEL: ${{ secrets.AI_FALLBACK_MODEL }}
         run: |
           set -eo pipefail
+          wait_ready() {  # set -e 下不能用 `curl && break`，探测失败一次就会终止整个 step
+            ok=""
+            for i in $(seq 1 20); do
+              if curl -sf "http://127.0.0.1:$PORT/healthz" >/dev/null; then ok=1; break; fi
+              sleep 0.5
+            done
+            [ -n "$ok" ]
+          }
           {
             python3 - <<'PY'
             import json, os
@@ -41,11 +49,21 @@ jobs:
             print('上游顺序：', ' → '.join('%s(%s)' % (r['label'], r['model']) for r in rows))
             PY
             export AI_UPSTREAMS="$(cat upstreams.json)"
+            pkill -f ai_failover.py 2>/dev/null || true
+            sleep 1
             nohup python3 scripts/ai_failover.py > case1.log 2>&1 &
-            for i in $(seq 1 20); do curl -sf "http://127.0.0.1:$PORT/healthz" >/dev/null && break; sleep 0.5; done
-            curl -sf "http://127.0.0.1:$PORT/healthz" >/dev/null || { echo "❌ 代理没起来"; cat case1.log; exit 1; }
-            python3 scripts/ai_probe.py --base "http://127.0.0.1:$PORT/v1" --key local
+            wait_ready || { echo "❌ 代理没起来"; cat case1.log; exit 1; }
+            rc=1
+            for try in 1 2 3; do
+              rc=0
+              python3 scripts/ai_probe.py --base "http://127.0.0.1:$PORT/v1" --key local || rc=$?
+              [ "$rc" -eq 0 ] && break
+              echo "  第 $try 次尝试 rc=$rc，再打一次"
+            done
             echo "--- 代理日志 ---"; cat case1.log
+            take=$(grep -c "接管成功" case1.log || true)
+            echo "::notice::Case1 探针 rc=$rc · 备用接管 $take 次"
+            [ "$rc" -eq 0 ] || { echo "❌ 探针失败 rc=$rc"; exit 1; }
             grep -q "接管成功" case1.log && echo "✅ 主接口失败时备用接管" \
               || { echo "❌ 日志里没有接管记录，切换没生效"; exit 1; }
           } 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
@@ -60,6 +78,14 @@ jobs:
           AI_FALLBACK_MODEL: ${{ secrets.AI_FALLBACK_MODEL }}
         run: |
           set -eo pipefail
+          wait_ready() {
+            ok=""
+            for i in $(seq 1 20); do
+              if curl -sf "http://127.0.0.1:$PORT/healthz" >/dev/null; then ok=1; break; fi
+              sleep 0.5
+            done
+            [ -n "$ok" ]
+          }
           {
             echo "### Case 2"
             N=$(python3 scripts/ai_failover.py --count-upstreams)
@@ -68,16 +94,18 @@ jobs:
             pkill -f ai_failover.py 2>/dev/null || true
             sleep 1
             nohup python3 scripts/ai_failover.py > case2.log 2>&1 &
-            for i in $(seq 1 20); do curl -sf "http://127.0.0.1:$PORT/healthz" >/dev/null && break; sleep 0.5; done
-            curl -sf "http://127.0.0.1:$PORT/healthz" >/dev/null || { echo "❌ 代理没起来"; cat case2.log; exit 1; }
+            wait_ready || { echo "❌ 代理没起来"; cat case2.log; exit 1; }
             echo "代理健康：$(curl -s "http://127.0.0.1:$PORT/healthz")"
             fails=0
             for i in 1 2 3; do
               printf '第 %s 枪：' "$i"
-              python3 scripts/ai_probe.py --base "http://127.0.0.1:$PORT/v1" --key local \
-                || { fails=$((fails+1)); echo "  ↑ 第 $i 枪失败"; }
+              rc=0
+              python3 scripts/ai_probe.py --base "http://127.0.0.1:$PORT/v1" --key local || rc=$?
+              [ "$rc" -eq 0 ] || { fails=$((fails+1)); echo "  ↑ 第 $i 枪失败 rc=$rc"; }
             done
             echo "--- 代理日志 ---"; cat case2.log
+            take=$(grep -c "接管成功" case2.log || true)
+            echo "::notice::Case2 上游 $N 个 · 三枪失败 $fails 次 · 接管 $take 次"
             if grep -q "接管成功" case2.log; then
               echo "⚠️ 主接口在本次自检里失败过，接管 $(grep -c '接管成功' case2.log) 次"
             else

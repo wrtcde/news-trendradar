@@ -135,6 +135,7 @@ jobs:
 
       - name: Start AI failover
         if: success()
+        continue-on-error: true   # 兜底起不来也不能拖垮抓取：下面已先写好直连主接口的值
         env:
           AI_API_KEY: ${{ secrets.AI_API_KEY }}
           AI_API_BASE: ${{ secrets.AI_API_BASE }}
@@ -146,23 +147,24 @@ jobs:
           AI_FALLBACK2_API_BASE: ${{ secrets.AI_FALLBACK2_API_BASE }}
           AI_FALLBACK2_MODEL: ${{ secrets.AI_FALLBACK2_MODEL }}
         run: |
+          # 先按「直连主接口」落定，后面只有代理真的起来了才覆盖
+          echo "AI_API_BASE=$AI_API_BASE" >> "$GITHUB_ENV"
+          echo "AI_API_KEY=$AI_API_KEY" >> "$GITHUB_ENV"
           N=$(uv run python scripts/ai_failover.py --count-upstreams)
           echo "检测到 $N 个 AI 上游"
           if [ "$N" -lt 2 ]; then
             echo "只配了主接口，不启用主备切换"
-            echo "AI_API_BASE=$AI_API_BASE" >> "$GITHUB_ENV"
-            echo "AI_API_KEY=$AI_API_KEY" >> "$GITHUB_ENV"
             exit 0
           fi
           nohup uv run python scripts/ai_failover.py > "$RUNNER_TEMP/ai-failover.log" 2>&1 &
+          ok=""
           for i in $(seq 1 20); do
-            curl -sf http://127.0.0.1:8788/healthz >/dev/null && break
+            if curl -sf http://127.0.0.1:8788/healthz >/dev/null; then ok=1; break; fi
             sleep 0.5
           done
-          if ! curl -sf http://127.0.0.1:8788/healthz >/dev/null; then
-            echo "::error::AI 兜底代理没起来，本次沿用主接口"
-            echo "AI_API_BASE=$AI_API_BASE" >> "$GITHUB_ENV"
-            echo "AI_API_KEY=$AI_API_KEY" >> "$GITHUB_ENV"
+          if [ -z "$ok" ]; then
+            echo "::warning::AI 兜底代理没起来，本次沿用主接口直连"
+            cat "$RUNNER_TEMP/ai-failover.log" || true
             exit 0
           fi
           echo "AI_API_BASE=http://127.0.0.1:8788/v1" >> "$GITHUB_ENV"
