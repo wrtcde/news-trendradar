@@ -31,8 +31,9 @@ LOGOS_JSON = os.path.join(HERE, '..', 'assets', 'logos.json')
 BRIEF_NAME = (os.environ.get('BRIEF_NAME') or '').strip() or '热点简报'
 BRIEF_TAG = (os.environ.get('BRIEF_TAG') or '').strip() or '每日行业热点 · 内部速览'
 CRAWL_HOURS = [8, 20]          # 与 config.yaml 的 morning_evening 预设对应
-BATCH_SIZE = 40
+BATCH_SIZE = 12
 TIMEOUT = 180
+RETRIES = 2
 
 CJK = re.compile(u'[一-鿿㐀-䶿]')
 
@@ -135,11 +136,11 @@ def translate(titles):
     model = os.environ.get('AI_MODEL', '').strip() or 'openai/gpt-4o-mini'
     # AI_MODEL 是 LiteLLM 风格的路由名；直连 OpenAI 兼容接口时只认真实的模型 id
     model_id = model[len('openai/'):] if model.startswith('openai/') else model
-    print('[brief] 翻译 %d 条 · 模型 %s' % (len(titles), model_id))
-
+    print('[brief] 待译 %d 条 · 模型 %s · 接口 %s' % (len(titles), model_id, base))
     out = {}
-    for start in range(0, len(titles), BATCH_SIZE):
-        batch = titles[start:start + BATCH_SIZE]
+
+    def once(batch):
+        """一次请求。成功返回 {原文: 译文}；失败返回 None，交给上层重试或拆批。"""
         payload = {
             'model': model_id,
             'temperature': 0.2,
@@ -162,12 +163,31 @@ def translate(titles):
             content = (resp.get('choices') or [{}])[0].get('message', {}).get('content') or ''
             arr = json.loads(re.search(r'\[.*\]', content, re.S).group(0))
             if isinstance(arr, list) and len(arr) == len(batch):
-                out.update({t: str(a).strip() for t, a in zip(batch, arr) if str(a).strip()})
-                print('[brief] 第 %d 批成功' % (start // BATCH_SIZE + 1))
-            else:
-                print('[brief] 第 %d 批数量不符，跳过' % (start // BATCH_SIZE + 1))
+                return {t: str(a).strip() for t, a in zip(batch, arr)}
+            print('[brief] 返回数量不符（%d / %d），拆批重试' % (len(arr) if isinstance(arr, list) else -1, len(batch)))
         except Exception as exc:
-            print('[brief] 第 %d 批失败：%r' % (start // BATCH_SIZE + 1, exc))
+            print('[brief] 请求失败：%r' % exc)
+        return None
+
+    def run(batch, depth=0):
+        got = None
+        for _ in range(RETRIES + 1):
+            got = once(batch)
+            if got is not None:
+                break
+        if got is None:
+            if len(batch) == 1 or depth >= 5:
+                print('[brief] 放弃 1 条（将按英文原题直录）：%s' % batch[0][:50])
+                return
+            mid = len(batch) // 2
+            run(batch[:mid], depth + 1)
+            run(batch[mid:], depth + 1)
+            return
+        out.update({t: a for t, a in got.items() if a})
+
+    for start in range(0, len(titles), BATCH_SIZE):
+        run(titles[start:start + BATCH_SIZE])
+    print('[brief] 翻译成功 %d / %d 条' % (len(out), len(titles)))
     return out
 
 
@@ -472,6 +492,8 @@ def render(path: str) -> bool:
         for it in items:
             if not it['zh'] and it['en'] in mapping:
                 it['zh'] = mapping[it['en']]
+            if it['zh'] and it['zh'] == it['en']:
+                it['en'] = ''          # 原文本就是中文，别排出一条重复的 EN 副行
 
     model = build_model(items, gen)
     notes = cluster_notes(items, model)
