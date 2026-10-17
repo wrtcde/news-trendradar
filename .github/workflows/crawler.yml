@@ -168,6 +168,21 @@ jobs:
           S3_REGION: ${{ secrets.S3_REGION }}
           GITHUB_ACTIONS: true
         run: uv run python -m trendradar
+      - name: Make report bilingual
+        if: success()
+        env:
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          AI_MODEL: ${{ secrets.AI_MODEL }}
+          AI_API_BASE: ${{ secrets.AI_API_BASE }}
+        run: |
+          shopt -s nullglob
+          files=(index.html output/html/latest/*.html output/html/*/*.html)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "no HTML report found, skipping bilingual step"
+            exit 0
+          fi
+          echo "待处理文件: ${files[*]}"
+          uv run python scripts/bilingual_report.py "${files[@]}"
       - name: Upload HTML archive to R2
         if: success()
         env:
