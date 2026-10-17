@@ -103,6 +103,13 @@ jobs:
             exit 1
           fi
 
+      # 周末（北京时间周六/周日）把 notification.enabled 就地改成 false：
+      # 照常抓取 + 生成 HTML + 更新 news 网站，只是不推企业微信群。
+      # 必须排在「Run crawler」之前——trendradar 只在启动时读一次 config.yaml。
+      - name: 周末不推送（只更新网站）
+        if: success()
+        run: uv run python scripts/weekend_no_push.py
+
       - name: Start AI failover
         if: success()
         continue-on-error: true   # 兜底起不来也不能拖垮抓取：下面已先写好直连主接口的值
