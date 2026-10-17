@@ -105,7 +105,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .wordmark .zh .dot{color:var(--ember)}
 .wordmark .tag{font-size:12.5px;color:var(--faint);letter-spacing:.12em;white-space:nowrap}
 .issue-switch{display:flex;align-items:stretch;gap:1px;border:1px solid var(--rule-2)}
-.issue-switch button{padding:7px 13px;font-size:12.5px;color:var(--muted);background:var(--bg-2);
+.issue-switch button,.issue-switch a{padding:7px 13px;font-size:12.5px;color:var(--muted);background:var(--bg-2);
   transition:background .18s,color .18s}
 .issue-switch button:hover{background:#2b2420;color:var(--paper)}
 .issue-switch .cur{background:#2e251e;color:var(--paper);font-family:var(--f-num);font-size:13px;
@@ -113,6 +113,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .issue-switch .cur em{font-style:normal;color:var(--ember-2);font-family:var(--f-body);
   font-size:12px;margin-left:7px}
 .issue-switch .nav{font-family:var(--f-display);font-stretch:condensed;letter-spacing:.08em}
+  .issue-switch [disabled],.pop-head button:disabled{opacity:.34;pointer-events:none}
 
 .mast-meta{font-family:var(--f-num);font-size:12.5px;color:var(--faint);line-height:2;padding:10px 0 0}
 .mast-meta b{color:var(--muted);font-weight:400}
