@@ -1,0 +1,93 @@
+name: AI Failover Check
+
+# 只验 AI 主备切换链路：不跑爬虫、不推送企业微信。
+# 用法：Actions → AI Failover Check → Run workflow
+#   Case 1  故意把主接口指向死地址，验证备用确实接管
+#   Case 2  用真实的 主→备 顺序连打三枪，看谁在服务、有没有切换
+#   Case 3  绕开代理直连两家，量各自延迟
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      PORT: "8788"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Case 1 · 主接口是死的，备用必须接管
+        env:
+          AI_FALLBACK_API_BASE: ${{ secrets.AI_FALLBACK_API_BASE }}
+          AI_FALLBACK_API_KEY: ${{ secrets.AI_FALLBACK_API_KEY }}
+          AI_FALLBACK_MODEL: ${{ secrets.AI_FALLBACK_MODEL }}
+        run: |
+          set -e
+          python3 - <<'PY'
+          import json, os
+          rows = [
+              {'label': '主(故意打不通)', 'base': 'http://127.0.0.1:9/v1',
+               'key': 'dead', 'model': 'dead', 'timeout': 5},
+              {'label': '备(真实)', 'base': os.environ['AI_FALLBACK_API_BASE'],
+               'key': os.environ['AI_FALLBACK_API_KEY'],
+               'model': os.environ['AI_FALLBACK_MODEL'], 'timeout': 60},
+          ]
+          with open('upstreams.json', 'w') as fh:
+              fh.write(json.dumps(rows))
+          print('上游顺序：', ' → '.join('%s(%s)' % (r['label'], r['model']) for r in rows))
+          PY
+          export AI_UPSTREAMS="$(cat upstreams.json)"
+          nohup python3 scripts/ai_failover.py > case1.log 2>&1 &
+          for i in $(seq 1 20); do curl -sf "http://127.0.0.1:$PORT/healthz" >/dev/null && break; sleep 0.5; done
+          curl -sf "http://127.0.0.1:$PORT/healthz" >/dev/null || { echo "❌ 代理没起来"; cat case1.log; exit 1; }
+          python3 scripts/ai_probe.py --base "http://127.0.0.1:$PORT/v1" --key local
+          echo "--- 代理日志 ---"; cat case1.log
+          grep -q "接管成功" case1.log && echo "✅ 主接口失败时备用接管" \
+            || { echo "❌ 日志里没有接管记录，切换没生效"; exit 1; }
+
+      - name: Case 2 · 真实主备顺序，连打三枪
+        env:
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          AI_API_BASE: ${{ secrets.AI_API_BASE }}
+          AI_MODEL: ${{ secrets.AI_MODEL }}
+          AI_FALLBACK_API_BASE: ${{ secrets.AI_FALLBACK_API_BASE }}
+          AI_FALLBACK_API_KEY: ${{ secrets.AI_FALLBACK_API_KEY }}
+          AI_FALLBACK_MODEL: ${{ secrets.AI_FALLBACK_MODEL }}
+        run: |
+          set -e
+          N=$(python3 scripts/ai_failover.py --count-upstreams)
+          echo "检测到 $N 个上游"
+          [ "$N" -ge 2 ] || { echo "❌ 备用 Secrets 没配齐"; exit 1; }
+          nohup python3 scripts/ai_failover.py > case2.log 2>&1 &
+          for i in $(seq 1 20); do curl -sf "http://127.0.0.1:$PORT/healthz" >/dev/null && break; sleep 0.5; done
+          curl -sf "http://127.0.0.1:$PORT/healthz" >/dev/null || { echo "❌ 代理没起来"; cat case2.log; exit 1; }
+          fails=0
+          for i in 1 2 3; do
+            printf '第 %s 枪：' "$i"
+            python3 scripts/ai_probe.py --base "http://127.0.0.1:$PORT/v1" --key local || fails=$((fails+1))
+          done
+          echo "--- 代理日志 ---"; cat case2.log
+          if grep -q "接管成功" case2.log; then
+            echo "⚠️ 主接口在本次自检里失败过，接管 $(grep -c '接管成功' case2.log) 次；三枪成功 $((3-fails)) 次"
+          else
+            echo "✅ 主接口全程在线，未发生切换；三枪成功 $((3-fails)) 次"
+          fi
+          [ "$fails" -eq 0 ] || { echo "❌ 有枪全灭（两家都不通）"; exit 1; }
+
+      - name: Case 3 · 直连两家量延迟
+        env:
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          AI_API_BASE: ${{ secrets.AI_API_BASE }}
+          AI_MODEL: ${{ secrets.AI_MODEL }}
+          AI_FALLBACK_API_BASE: ${{ secrets.AI_FALLBACK_API_BASE }}
+          AI_FALLBACK_API_KEY: ${{ secrets.AI_FALLBACK_API_KEY }}
+          AI_FALLBACK_MODEL: ${{ secrets.AI_FALLBACK_MODEL }}
+        run: |
+          echo "=== 主 · $AI_MODEL ==="
+          AI_BASE="$AI_API_BASE" AI_KEY="$AI_API_KEY" AI_MODEL_NAME="$AI_MODEL" \
+            python3 scripts/ai_probe.py --direct || true
+          echo "=== 备 · $AI_FALLBACK_MODEL ==="
+          AI_BASE="$AI_FALLBACK_API_BASE" AI_KEY="$AI_FALLBACK_API_KEY" AI_MODEL_NAME="$AI_FALLBACK_MODEL" \
+            python3 scripts/ai_probe.py --direct || true
