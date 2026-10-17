@@ -54,7 +54,7 @@ def build_upstreams():
             log('AI_UPSTREAMS 不是合法 JSON（%r），改用散装变量' % exc)
 
     rows = []
-    for prefix, label in (('', '主'), ('AI_FALLBACK_', '备1'), ('AI_FALLBACK2_', '备2')):
+    for prefix, label in (('AI_', '主'), ('AI_FALLBACK_', '备1'), ('AI_FALLBACK2_', '备2')):
         base = (os.environ.get(prefix + 'API_BASE') or '').strip()
         key = (os.environ.get(prefix + 'API_KEY') or '').strip()
         model = (os.environ.get(prefix + 'MODEL') or '').strip()
