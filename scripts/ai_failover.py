@@ -13,10 +13,12 @@ TrendRadar 的 AI 总结、翻译，以及 render_brief.py 的标题翻译，全
     AI_UPSTREAMS       JSON 数组，按顺序即优先级：
                        [{"label":"主","base":"https://.../v1","key":"sk-...",
                          "model":"DeepSeek-V4-Flash","timeout":45}, ...]
-    没给 AI_UPSTREAMS 时，退而从这几组拼出来：
-      AI_API_BASE / AI_API_KEY / AI_MODEL                     主
-      AI_FALLBACK_API_BASE / _KEY / _MODEL                    备 1
+    没给 AI_UPSTREAMS 时，退而从这几组拼出来（按下面的顺序尝试）：
+      AI_FALLBACK_API_BASE / _KEY / _MODEL                    主（原备槽，2026-10-18 转主）
+      AI_API_BASE / AI_API_KEY / AI_MODEL                     备（原主槽）
       AI_FALLBACK2_API_BASE / _KEY / _MODEL                   备 2
+    槽位名与主次已不一致：AI_ 这个槽装的是备用网关。请求里的 model 会
+    按每个上游自己配的值改写，所以客户端只管发，不必知道谁在服务。
     AI_FAILOVER_PORT   监听端口，默认 8788
     AI_FAILOVER_TIMEOUT 单个上游的超时秒数，默认取上游自己的值或 45
     AI_FAILOVER_TRIPS  同一上游连续失败几次后本次运行不再尝试，默认 2
@@ -54,7 +56,11 @@ def build_upstreams():
             log('AI_UPSTREAMS 不是合法 JSON（%r），改用散装变量' % exc)
 
     rows = []
-    for prefix, label in (('AI_', '主'), ('AI_FALLBACK_', '备1'), ('AI_FALLBACK2_', '备2')):
+    # 顺序即优先级。2026-10-18：AI_FALLBACK_ 槽的网关更快且实际在服务，提到第一位，
+    # 原 AI_ 槽降为备用 —— 标签写清「角色(来自哪个槽)」，日志才不会骗人。
+    for prefix, label in (('AI_FALLBACK_', '主(原备槽)'),
+                          ('AI_', '备(原主槽)'),
+                          ('AI_FALLBACK2_', '备2')):
         base = (os.environ.get(prefix + 'API_BASE') or '').strip()
         key = (os.environ.get(prefix + 'API_KEY') or '').strip()
         model = (os.environ.get(prefix + 'MODEL') or '').strip()
