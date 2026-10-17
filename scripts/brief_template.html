@@ -633,10 +633,10 @@ document.querySelectorAll(".cluster").forEach(s=>io.observe(s));
 /* ═══ 11. 来源字幕：本期真实出现的来源 + 派生条目数 ═══ */
 const credGrid=document.getElementById("credGrid"),counts={};
 ITEMS.forEach(i=>counts[i.s]=(counts[i.s]||0)+1);
-const maxC=Math.max(...Object.values(counts));
-credGrid.style.setProperty("--bar-max",maxC*8+"px");
+const maxSrc=Math.max(...Object.values(counts));
+credGrid.style.setProperty("--bar-max",maxSrc*8+"px");
 // 计数列必须等宽：否则 "24 条" 比 "4 条" 宽 7px，会把名字列挤窄、柱子轨道跟着左移
-credGrid.style.setProperty("--cnt-w",(String(maxC).length*8+22)+"px");
+credGrid.style.setProperty("--cnt-w",(String(maxSrc).length*8+22)+"px");
 Object.keys(counts).sort((a,b)=>counts[b]-counts[a]||SRC[a].n.localeCompare(SRC[b].n)).forEach(name=>{
   const row=document.createElement("div");row.className="cred";
   row.innerHTML=`${stamp(name)}<span class="bar" style="width:${counts[name]*8}px"></span><span class="n">${counts[name]} 条</span>`;
