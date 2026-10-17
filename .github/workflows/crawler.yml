@@ -168,6 +168,23 @@ jobs:
           S3_REGION: ${{ secrets.S3_REGION }}
           GITHUB_ACTIONS: true
         run: uv run python -m trendradar
+      - name: Upload HTML archive to R2
+        if: success()
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          shopt -s nullglob
+          count=0
+          for f in output/html/*/*.html; do
+            rel="${f#output/}"
+            case "$rel" in html/latest/*) continue ;;
+            esac
+            echo "uploading archive: $rel"
+            npx --yes wrangler@4 r2 object put "trendradar-html/$rel" --file="$f" --content-type "text/html; charset=utf-8"
+            count=$((count + 1))
+          done
+          echo "HTML archive uploaded: $count file(s)"
 
       # --------------------------------------------------------------------------------
       # ☁️ CLOUDFLARE PAGES DEPLOY / 部署到 Cloudflare Pages（可选）
