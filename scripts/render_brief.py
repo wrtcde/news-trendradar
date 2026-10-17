@@ -34,6 +34,9 @@ CRAWL_HOURS = [8, 20]          # 与 config.yaml 的 morning_evening 预设对�
 BATCH_SIZE = 12
 TIMEOUT = 180
 RETRIES = 2
+STANDALONE_GROUP = '出版行业直采'   # 独立展示区的条目不受 AI 排名影响，单列一组
+SG_STOPS = ('<div class="standalone-group"', '<div class="fab-bar"', '<div class="footer"',
+            '<div class="tip-row"', '<div class="ai-analysis', '<div class="analysis-')
 
 CJK = re.compile(u'[一-鿿㐀-䶿]')
 
@@ -112,6 +115,38 @@ def parse_report(html: str) -> dict:
         items.append({'group': group, 'source': source, 'time': time_str,
                       'url': url, 'zh': zh, 'en': en, 'new': new})
 
+    # 独立展示区用的是另一套 class（.standalone-group / .news-item），
+    # 上游把「不受关键词/AI 过滤」的源渲染在这里，不解析就会整段丢失。
+    sg_starts = [m.start() for m in re.finditer(r'<div class="standalone-group"', html)]
+    if sg_starts:
+        stops = list(sg_starts) + [len(html)]
+        for marker in SG_STOPS:
+            p = html.find(marker)
+            if p > 0:
+                stops.append(p)
+        stops = sorted(set(stops))
+        for pos in sg_starts:
+            end = min(p for p in stops if p > pos)
+            chunk = html[pos:end]
+            nm = re.search(r'<div class="standalone-name">(.*?)</div>', chunk, re.S)
+            feed = strip_tags(unesc(nm.group(1))) if nm else '独立展示区'
+            item_starts = [m.start() for m in re.finditer(r'<div class="news-item">', chunk)]
+            for ip in item_starts:
+                ie = min([x for x in item_starts if x > ip] + [len(chunk)])
+                seg = chunk[ip:ie]
+                tm = re.search(r'<span class="time-info">(.*?)</span>', seg, re.S)
+                lm = re.search(r'<a\s+href="([^"]*)"[^>]*>(.*?)</a>', seg, re.S)
+                if not lm:
+                    continue
+                url = unesc(lm.group(1).strip())
+                title = strip_tags(unesc(lm.group(2)))
+                if not title:
+                    continue
+                zh, en = (title, '') if is_cjk_heavy(title) else ('', title)
+                items.append({'group': STANDALONE_GROUP, 'source': feed,
+                              'time': strip_tags(unesc(tm.group(1))) if tm else '',
+                              'url': url, 'zh': zh, 'en': en, 'new': False})
+
     # 报告分「RSS 新增更新」与「RSS 订阅更新」两段渲染，同一条会出现两次。
     # 按 URL 去重并保留首次出现（新增段在前），否则条目数会翻倍。
     uniq, seen, dropped = [], {}, 0
@@ -124,7 +159,8 @@ def parse_report(html: str) -> dict:
         uniq.append(it)
     if dropped:
         print('[brief] 两段重复合并 %d 条 → 实际 %d 条' % (dropped, len(uniq)))
-    return {'info': info, 'items': uniq}
+    added = sum(1 for it in uniq if it['group'] == STANDALONE_GROUP)
+    return {'info': info, 'items': uniq, 'standalone_added': added}
 
 
 # ── 翻译：只在缺中文时调用；失败就照常渲染，条目会标「中译待补」──────────────
@@ -476,9 +512,13 @@ def render(path: str) -> bool:
 
     info = parsed['info']
     hit = re.match(r'\s*(\d+)', info.get('RSS 命中', ''))
-    if hit and int(hit.group(1)) != len(items):
-        print('[brief] 注意：解析到 %d 条，但报告自称 RSS 命中 %s 条——'
-              '上游结构可能变了，请核对' % (len(items), hit.group(1)))
+    expect = (int(hit.group(1)) if hit else None)
+    if expect is not None:
+        expect += parsed.get('standalone_added', 0)   # 独立展示区是额外完整展示的，不在「命中」数里
+        if expect != len(items):
+            print('[brief] 注意：解析到 %d 条，但报告自称 RSS 命中 %s 条 + 独立区 %d 条——'
+                  '上游结构可能变了，请核对' % (len(items), hit.group(1),
+                                            parsed.get('standalone_added', 0)))
     report_date = date_from_path(path)
     gen = parse_stamp(info.get('生成时间', '') or '01-01 00:00',
                       dt.datetime.combine(report_date, dt.time(23, 59)))
