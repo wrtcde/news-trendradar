@@ -239,12 +239,13 @@ svg .zone:hover .brk{opacity:1}
 .credits h2{font-family:var(--f-cjk);font-size:22px;font-weight:400;letter-spacing:.2em}
 .credits .sub{font-size:12.5px;color:var(--faint);margin-top:6px;text-wrap:pretty}
 .cred-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 44px;margin-top:16px}
-.cred{display:flex;align-items:center;gap:13px;padding:10px 0;border-bottom:1px solid var(--rule);
+.cred{display:grid;grid-template-columns:auto minmax(0,1fr) var(--bar-max,64px) max-content;
+  align-items:center;gap:13px;padding:10px 0;border-bottom:1px solid var(--rule);
   transition:background .2s}
 .cred:hover{background:rgba(245,239,228,.04)}
-.cred .bar{height:2px;background:var(--ember);opacity:.55;flex:0 0 auto}
-.cred .n{margin-left:auto;font-family:var(--f-num);font-size:13px;color:var(--ember-2)}
-.cred .s-name{text-align:left}
+.cred .bar{height:2px;background:var(--ember);opacity:.55}
+.cred .n{font-family:var(--f-num);font-size:13px;color:var(--ember-2);text-align:right;white-space:nowrap}
+.cred .s-name{text-align:left;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* ══ 页脚 ═════════════════════════════════════════════════════════ */
 footer{margin-top:40px;padding:20px 0 58px;border-top:1px solid var(--rule-2)}
@@ -632,6 +633,7 @@ document.querySelectorAll(".cluster").forEach(s=>io.observe(s));
 /* ═══ 11. 来源字幕：本期真实出现的来源 + 派生条目数 ═══ */
 const credGrid=document.getElementById("credGrid"),counts={};
 ITEMS.forEach(i=>counts[i.s]=(counts[i.s]||0)+1);
+credGrid.style.setProperty("--bar-max",Math.max(...Object.values(counts))*8+"px");
 Object.keys(counts).sort((a,b)=>counts[b]-counts[a]||SRC[a].n.localeCompare(SRC[b].n)).forEach(name=>{
   const row=document.createElement("div");row.className="cred";
   row.innerHTML=`${stamp(name)}<span class="bar" style="width:${counts[name]*8}px"></span><span class="n">${counts[name]} 条</span>`;
