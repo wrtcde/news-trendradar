@@ -501,8 +501,11 @@ const stamp=name=>`<span class="stamp" aria-hidden="true">${SRC[name].d?`<img sr
 const dur=m=>m>=60?`${Math.floor(m/60)} 小时 ${m%60} 分`:`${m} 分`;
 const NOTE=M.clusterNotes||{};   /* 每簇一句话定性，由 Python 从数据派生 */
 const stream=document.getElementById("stream");
+/* 正文阅读顺序：簇倒序、簇内条目倒序；序号按这个顺序重排 */
+const SHOW=CL.slice().reverse().flatMap(c=>c.items.slice().reverse());
+SHOW.forEach((it,n)=>it.disp=n+1);
 
-CL.forEach(c=>{
+CL.slice().reverse().forEach(c=>{
   const sameDay=dayOf(c.first)===dayOf(c.last);
   const range=sameDay?`${dayOf(c.first)} ${hhmm(c.first)} → ${hhmm(c.last)}`:`${stamp2(c.first)} → ${stamp2(c.last)}`;
   const sec=document.createElement("section");
@@ -515,14 +518,14 @@ CL.forEach(c=>{
     </div><div class="rows"><span class="spine" style="width:${Math.max(1,Math.min(4,Math.round(c.rate*1.1)))}px"></span></div>`;
   sec.querySelector(".cn").textContent=`${c.items.length} 条 · 跨 ${c.h.toFixed(1)} 小时`;
   const rows=sec.querySelector(".rows");
-  c.items.forEach(it=>{
+  c.items.slice().reverse().forEach(it=>{
     const primary=it.zh||it.en,secondary=it.zh?it.en:"",noZh=!it.zh;
     const art=document.createElement("article");
     art.className="item"+(it.late?" late":"");
     art.id=it.id;art.dataset.group=it.g;
     art.innerHTML=`<span class="spine-dot"></span>
       <div class="clock">${dayOf(it.m)}<b>${hhmm(it.m)}${it.late?' <span class="warn">↑</span>':""}</b></div>
-      <div class="idx">${String(it.i+1).padStart(2,"0")}</div>
+      <div class="idx">${String(it.disp).padStart(2,"0")}</div>
       <div class="main">
         <h3 class="zh"><a href="${it.u.replace(/&/g,"&amp;")}" target="_blank" rel="noopener noreferrer">${esc(primary)}<span class="arrow"> ↗</span></a>${noZh?'<span class="flag">中译待补 · 原文直录</span>':""}</h3>
         ${secondary?`<div class="src-line"><span class="tagline">EN</span><p class="en">${esc(secondary)}</p></div>`:""}
@@ -541,7 +544,7 @@ CL.forEach(c=>{
 
 /* ═══ 8. 簇按钮 + 分组筛选 ═══ */
 const clusterNav=document.getElementById("clusterNav"),railClusters=document.getElementById("railClusters");
-CL.forEach(c=>{
+CL.slice().reverse().forEach(c=>{
   [clusterNav,railClusters].forEach(box=>{
     const b=document.createElement("button");
     b.className="chip";b.type="button";b.dataset.cluster=c.key;
