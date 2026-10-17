@@ -124,9 +124,12 @@ jobs:
           AI_FALLBACK2_API_BASE: ${{ secrets.AI_FALLBACK2_API_BASE }}
           AI_FALLBACK2_MODEL: ${{ secrets.AI_FALLBACK2_MODEL }}
         run: |
-          # 先按「直连主接口」落定，后面只有代理真的起来了才覆盖
-          echo "AI_API_BASE=$AI_API_BASE" >> "$GITHUB_ENV"
-          echo "AI_API_KEY=$AI_API_KEY" >> "$GITHUB_ENV"
+          # 直连兜底要按「代理的优先顺序」写，否则代理起不来时会退回打旧主。
+          # 2026-10-18 起主用是 AI_FALLBACK_ 槽（更快、实际在服务），AI_ 槽降为备用。
+          P_BASE="$AI_FALLBACK_API_BASE"; P_KEY="$AI_FALLBACK_API_KEY"
+          if [ -z "$P_BASE" ]; then P_BASE="$AI_API_BASE"; P_KEY="$AI_API_KEY"; fi
+          echo "AI_API_BASE=$P_BASE" >> "$GITHUB_ENV"
+          echo "AI_API_KEY=$P_KEY" >> "$GITHUB_ENV"
           N=$(uv run python scripts/ai_failover.py --count-upstreams)
           echo "检测到 $N 个 AI 上游"
           if [ "$N" -lt 2 ]; then
@@ -146,7 +149,7 @@ jobs:
           fi
           echo "AI_API_BASE=http://127.0.0.1:8788/v1" >> "$GITHUB_ENV"
           echo "AI_API_KEY=failover-local" >> "$GITHUB_ENV"
-          echo "所有 AI 调用改走本地兜底代理：主接口超时/报错/空响应时自动切备用"
+          echo "所有 AI 调用改走本地兜底代理：先打 tokenrhythm（原备槽），超时/报错/空响应再切 AMD 原主槽"
 
       - name: Run crawler
         if: success()

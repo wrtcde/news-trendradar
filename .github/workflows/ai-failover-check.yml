@@ -120,11 +120,11 @@ jobs:
           AI_FALLBACK_MODEL: ${{ secrets.AI_FALLBACK_MODEL }}
         run: |
           {
-            echo "### Case 3 · 直连"
-            echo "主 · \`$AI_MODEL\`"
-            AI_BASE="$AI_API_BASE" AI_KEY="$AI_API_KEY" AI_MODEL_NAME="$AI_MODEL" \
-              python3 scripts/ai_probe.py --direct || true
-            echo "备 · \`$AI_FALLBACK_MODEL\`"
+            echo "### Case 3 · 直连（按现在的尝试顺序）"
+            echo "主 · 原备槽 \`$AI_FALLBACK_MODEL\`"
             AI_BASE="$AI_FALLBACK_API_BASE" AI_KEY="$AI_FALLBACK_API_KEY" AI_MODEL_NAME="$AI_FALLBACK_MODEL" \
+              python3 scripts/ai_probe.py --direct || true
+            echo "备 · 原主槽 \`$AI_MODEL\`"
+            AI_BASE="$AI_API_BASE" AI_KEY="$AI_API_KEY" AI_MODEL_NAME="$AI_MODEL" \
               python3 scripts/ai_probe.py --direct || true
           } 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
