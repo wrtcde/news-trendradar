@@ -1,0 +1,37 @@
+name: Deploy Archive Worker
+
+# news-archive Worker 是 news.ttwrt.top 的入口，但它不在爬虫流水线里部署 ——
+# 之前每次改完都要手动 PUT，于是出现过「仓库已改、线上还是旧的」。
+# 这个工作流把部署绑到该文件的变化上：改它就部署，别的文件改动不触发。
+#
+# 用现有 Secrets 即可（同一个 Token 已在爬虫里用于 Pages/R2 部署，含 Workers Scripts:Edit），
+# 不需要新增任何凭据。
+
+on:
+  push:
+    paths:
+      - news-archive.worker.mjs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-archive-worker
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # 部署脚本失败时要拿上一版做回滚素材，至少要 2 个提交
+          fetch-depth: 2
+
+      - name: Deploy news-archive Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: python3 scripts/deploy_archive_worker.py
