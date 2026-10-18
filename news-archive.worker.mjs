@@ -152,7 +152,16 @@ function renderBriefPop(days, currentKey) {
   const total = days.reduce((n, d) => n + d.files.length, 0);
   const curIdx = months.indexOf(`${curY}-${pad(curMo + 1)}`);
 
-  return `<div class="pop" id="pop" role="dialog" aria-modal="false" aria-label="切换日期与期次">
+  return `<style>
+  /* 期数角标：monthCells 会在日期后面输出一个 b 元素，但页面 CSS 是渲染时烤进 R2
+     的历史副本，旧期次里没有 .day b 规则 → 角标和日期连读成 "177"。样式随注入自带，
+     这样已归档的期次也立刻正确，不必等重新渲染。 */
+  .pop .day{position:relative}
+  .pop .day b{position:absolute;top:2px;right:4px;font:400 9px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    letter-spacing:0;color:var(--dim,#6b6157)}
+  .pop .day:hover b,.pop .day.today b{color:currentColor;opacity:.7}
+  </style>
+  <div class="pop" id="pop" role="dialog" aria-modal="false" aria-label="切换日期与期次">
   <div class="pop-head">
     <button type="button" id="calPrev" aria-label="上一月">◀</button>
     <span class="m" id="calMonth">${curY} 年 ${curMo + 1} 月</span>
