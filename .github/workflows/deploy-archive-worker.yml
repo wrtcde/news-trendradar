@@ -34,4 +34,6 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # 密钥绑定在上传时必须连值一起回传（CF 读不回原值），所以这里透传
+          CURATION_KEY: ${{ secrets.CURATION_KEY }}
         run: python3 scripts/deploy_archive_worker.py
