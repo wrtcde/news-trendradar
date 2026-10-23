@@ -527,61 +527,73 @@ async function checkLinks(data) {
   await Promise.all(jobs);
 }
 
+/** 两块共用同一套区块语法（页面里「本期来源」就是这套），只是来源不同、各自具名 */
+const CUR_STYLE = `
+  <style>
+  /* 样式随注入自带：页面 CSS 是渲染时烤进 R2 那份 HTML 的，历史期次里没有这些规则 */
+  .curation,.stream-head{margin-top:52px;padding:22px 0 4px;border-top:1px solid var(--rule-2,#332c26)}
+  .curation h2,.stream-head h2{font-family:var(--f-cjk,serif);font-size:22px;font-weight:400;
+    letter-spacing:.2em;color:var(--paper,#f5efe4)}
+  .curation .sub,.stream-head .sub{font-size:12.5px;color:var(--faint,#978e80);margin-top:6px;text-wrap:pretty}
+  .cur-sec{margin-top:24px}
+  .cur-h3{font-size:12.5px;letter-spacing:.14em;color:var(--ember,#e2703a)}
+  .cur-ic{margin-right:6px}
+  .cur-it{display:grid;grid-template-columns:34px minmax(0,1fr);column-gap:14px;
+    padding:13px 0 12px;border-top:1px solid var(--rule,rgba(245,239,228,.12))}
+  .cur-ol>li:first-child{border-top:0}
+  .cur-n{font-family:var(--f-display,sans-serif);font-stretch:condensed;font-size:14px;
+    letter-spacing:.06em;color:var(--dim,#8a8175);text-align:right;
+    font-variant-numeric:tabular-nums;padding-top:4px}
+  .cur-body{min-width:0}
+  .cur-t{font-size:18.5px;font-weight:600;line-height:1.5;color:var(--paper,#f5efe4);
+    text-decoration:none;text-wrap:pretty}
+  .cur-t:hover{color:var(--ember-2,#f2b371)}
+  .cur-tag,.cur-warn{display:inline-block;margin-left:9px;padding:0 6px;font-size:12px;
+    font-weight:400;vertical-align:2px;border:1px solid var(--rule-2,#332c26);color:var(--muted,#b8afa1)}
+  .cur-warn{color:var(--ember,#e2703a);border-color:rgba(226,112,58,.45)}
+  .cur-it.is-dead .cur-t{opacity:.62}
+  .cur-sum{margin-top:6px;font-size:14px;line-height:1.75;color:var(--muted,#b8afa1);text-wrap:pretty}
+  .cur-real{margin-top:4px;font-size:12px;color:var(--faint,#978e80)}
+  </style>`;
+
 function renderCuration(data) {
-  const n = data.sections.reduce((t, s) => t + s.items.length, 0);
-  const dead = data.sections.flatMap((s) => s.items).filter((i) => i.linkOk === false).length;
+  const items = data.sections.flatMap((s) => s.items);
+  const dead = items.filter((i) => i.linkOk === false).length;
+  let k = 0;
   const secs = data.sections.map((s) => `
   <div class="cur-sec">
     <h3 class="cur-h3">${s.icon ? `<span class="cur-ic">${esc(s.icon)}</span>` : ''}${esc(s.name)}</h3>
-    <ol class="cur-ol">${s.items.map((it) => `
-      <li class="cur-it${it.linkOk === false ? ' is-dead' : ''}">
+    <ul class="cur-ol">${s.items.map((it) => {
+      k += 1;
+      return `
+    <li class="cur-it${it.linkOk === false ? ' is-dead' : ''}">
+      <span class="cur-n">${String(k).padStart(2, '0')}</span>
+      <div class="cur-body">
         <a class="cur-t" href="${esc(it.url)}" target="_blank" rel="noopener noreferrer">${esc(it.title)}</a>${
           it.tag ? `<span class="cur-tag">${esc(it.tag)}</span>` : ''}${
           it.linkOk === false ? `<span class="cur-warn">链接打不开${it.http ? ' · HTTP ' + it.http : ''}</span>` : ''
         }${it.summary ? `<p class="cur-sum">${esc(it.summary)}</p>` : ''}${
           it.realDate ? `<p class="cur-real">真实日期 ${esc(it.realDate)} · 非当日新闻，持续跟踪</p>` : ''}
-      </li>`).join('')}
-    </ol>
+      </div>
+    </li>`;
+    }).join('')}
+    </ul>
   </div>`).join('');
 
-  return `<section class="cur" aria-labelledby="curH">
-  <style>
-  /* 样式随注入自带：页面 CSS 是渲染时烤进 R2 那份 HTML 的，历史期次里没有 .cur 规则 */
-  .cur{margin:0 0 44px;padding:20px 22px 8px;border:1px solid var(--rule-2,#332c26);
-    background:rgba(226,112,58,.045)}
-  .cur-h{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:4px}
-  .cur-h h2{margin:0;font-family:var(--f-cjk,serif);font-size:20px;font-weight:400;letter-spacing:.14em;
-    color:var(--paper,#f5efe4)}
-  .cur-h .cur-d{font-family:var(--f-num,monospace);font-size:12px;color:var(--faint,#8b7f72)}
-  .cur-h .cur-src{font-size:12px;color:var(--faint,#8b7f72)}
-  .cur-sec{margin-top:18px}
-  .cur-h3{margin:0 0 6px;font-size:13px;font-weight:600;letter-spacing:.06em;color:var(--ember,#e2703a)}
-  .cur-ic{margin-right:6px}
-  .cur-ol{margin:0;padding:0 0 0 20px}
-  .cur-it{margin:0 0 11px;padding-bottom:9px;border-bottom:1px solid var(--rule,#2b2521)}
-  .cur-it:last-child{border-bottom:0}
-  .cur-t{font-size:15px;line-height:1.6;color:var(--paper,#f5efe4);text-decoration:none;
-    border-bottom:1px solid transparent}
-  .cur-t:hover{color:var(--ember,#e2703a)}
-  .cur-tag,.cur-warn{display:inline-block;margin-left:7px;padding:1px 6px;font-size:11px;
-    vertical-align:2px;border:1px solid var(--rule-2,#332c26);color:var(--muted,#b5a89a)}
-  .cur-warn{color:var(--ember,#e2703a);border-color:var(--ember,#e2703a)}
-  .cur-it.is-dead .cur-t{opacity:.62}
-  .cur-sum{margin:5px 0 0;font-size:13px;line-height:1.75;color:var(--muted,#b5a89a);text-wrap:pretty}
-  .cur-real{margin:4px 0 0;font-size:12px;color:var(--faint,#8b7f72)}
-  .cur-foot{margin:14px 0 12px;font-size:12px;color:var(--faint,#8b7f72)}
-  @media (max-width:720px){.cur{padding:16px 14px 4px;margin:0 0 32px}}
-  </style>
-  <header class="cur-h"><h2 id="curH">编辑精选 · ${esc(data.title)}</h2>
-    <span class="cur-d">${esc(data.date)}</span>
-    <span class="cur-src">由 WorkBuddy 每日整理推送 · ${n} 条${dead ? ' · ' + dead + ' 条链接待核实' : ''}</span>
-  </header>${secs}
-  <p class="cur-foot">这一块独立于下方自动抓取的信息流：不经过关键词与 AI 筛选，按原样呈现。</p>
+  return `${CUR_STYLE}<section class="shell curation" aria-labelledby="curH">
+  <h2 id="curH">编辑精选 · ${esc(data.title)}</h2>
+  <p class="sub">由 WorkBuddy 每日整理推送 · ${esc(data.date)} · ${items.length} 条 · 不经过关键词与 AI 筛选，按原样呈现${
+    dead ? ' · ' + dead + ' 条链接待核实' : ''}</p>${secs}
 </section>`;
 }
 
+const STREAM_HEAD = `<section class="shell stream-head" aria-labelledby="streamH">
+  <h2 id="streamH">抓取信息流</h2>
+  <p class="sub">由定向信息源自动抓取，经关键词与 AI 筛选后，按各自发布时间铺成下方时间簇</p>
+</section>`;
+
 function injectCuration(html, data) {
-  const block = renderCuration(data);
+  const block = renderCuration(data) + STREAM_HEAD;
   const ph = html.match(/<div id="brief-curation"[^>]*><\/div>/);
   if (ph) return html.replace(ph[0], () => block);
   const m = html.match(/<main\b[^>]*>/);           // 旧期次没有占位，就插到正文最前面
