@@ -14,6 +14,11 @@
  */
 
 const PREFIX = 'html/';
+const CUR_PREFIX = 'curation/';
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_SECTIONS = 12;
+const MAX_ITEMS = 60;
+const LINK_TIMEOUT = 6000;
 const MAX_KEYS_PER_PAGE = 1000;
 const MAX_PAGES = 10;
 
@@ -44,6 +49,10 @@ export default {
       return html(renderIndex(keys));
     }
 
+    if (path === '/curation' || path.startsWith('/curation/')) {
+      return handleCuration(request, env, path);
+    }
+
     return text('未找到', 404);
   },
 };
@@ -72,10 +81,16 @@ async function serveReport(env, key, preDays) {
   const obj = await env.ARCHIVE.get(key);
   if (!obj) return text('报告不存在', 404);
 
-  const [raw, days] = await Promise.all([obj.text(), preDays || loadDays(env)]);
-  const out = isBrief(raw)
+  const date = (key.match(/^html\/(\d{4}-\d{2}-\d{2})\//) || [])[1] || '';
+  const [raw, days, cur] = await Promise.all([
+    obj.text(),
+    preDays || loadDays(env),
+    loadCuration(env, date),
+  ]);
+  let out = isBrief(raw)
     ? applyBriefNav(raw, days, key)
     : insertBeforeBody(raw, renderWidget(days, key));
+  if (cur) out = injectCuration(out, cur);
 
   return new Response(out, {
     headers: {
@@ -356,6 +371,238 @@ function renderIndex(keys) {
     })
     .join('');
   return page('归档索引', `<p class="meta">共 ${days.length} 天、${total} 期报告。<a href="/latest">直接看最新一期 →</a></p>${body}`);
+}
+
+/* ══ 编辑精选（WorkBuddy 每日推送的科研动态简报）════════════════════════
+   与爬虫那条链完全分开：那边是 28 个英文 RSS 源经 AI 打分筛选，这边是人
+   背书的中文简报（且覆盖国内动态，爬虫一条都抓不到）。
+   不经过 CI，所以当天推送完立刻出现在网站上，也不用等 08:00 / 20:00。 */
+
+async function loadCuration(env, date) {
+  if (!date || !DATE_RE.test(date)) return null;
+  try {
+    const obj = await env.ARCHIVE.get(CUR_PREFIX + date + '.json');
+    if (!obj) return null;
+    const data = JSON.parse(await obj.text());
+    return data && Array.isArray(data.sections) ? data : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function isRealDate(s) {
+  if (!DATE_RE.test(s)) return false;
+  const [y, m, d] = s.split('-').map(Number);
+  const t = Date.UTC(y, m - 1, d);
+  const dt = new Date(t);
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+
+async function handleCuration(request, env, path) {
+  const rest = path.slice('/curation'.length).replace(/^\//, '');
+
+  if (!rest) {                                   // GET /curation → 已有哪些天
+    const keys = await listCurationKeys(env);
+    return json({ days: keys.map((k) => k.split('/')[1].replace('.json', '')) });
+  }
+
+  const date = rest.replace(/\.json$/, '');
+  if (!isRealDate(date)) return json({ error: '日期格式要是真实存在的 YYYY-MM-DD' }, 400);
+
+  if (request.method === 'GET') {
+    const obj = await env.ARCHIVE.get(CUR_PREFIX + date + '.json');
+    if (!obj) return json({ error: '这一天还没有编辑精选', date }, 404);
+    return new Response(await obj.text(), {
+      headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+    });
+  }
+
+  if (request.method !== 'PUT' && request.method !== 'POST') {
+    return json({ error: '只支持 PUT / POST' }, 405);
+  }
+
+  const want = (env.CURATION_KEY || '').trim();
+  if (!want) return json({ error: 'Worker 未配置 CURATION_KEY 密钥，暂不接收推送' }, 501);
+
+  let input;
+  try {
+    input = await request.json();
+  } catch (e) {
+    return json({ error: '请求体不是合法 JSON' }, 400);
+  }
+  const got = (request.headers.get('x-curation-key') || input.key || '').trim();
+  if (got !== want) return json({ error: '口令不正确' }, 401);
+
+  const v = normalizeCuration(input, date);
+  if (!v.ok) return json({ errors: v.errors }, 422);
+
+  await checkLinks(v.data);
+  const broken = v.data.sections.flatMap((s) => s.items).filter((i) => i.linkOk === false);
+
+  await env.ARCHIVE.put(CUR_PREFIX + date + '.json', JSON.stringify(v.data), {
+    httpMetadata: { contentType: 'application/json; charset=utf-8' },
+  });
+  return json({
+    saved: CUR_PREFIX + date + '.json',
+    sections: v.data.sections.length,
+    items: v.data.sections.reduce((n, s) => n + s.items.length, 0),
+    dropped: v.errors,
+    brokenLinks: broken.map((i) => ({ title: i.title.slice(0, 40), url: i.url, http: i.http })),
+  });
+}
+
+async function listCurationKeys(env) {
+  const keys = [];
+  let cursor;
+  for (let p = 0; p < 5; p++) {
+    const res = await env.ARCHIVE.list({ prefix: CUR_PREFIX, limit: 200, cursor });
+    for (const o of res.objects) keys.push(o.key);
+    if (!res.truncated) break;
+    cursor = res.cursor;
+    if (!cursor) break;
+  }
+  return keys.sort();
+}
+
+/** 严格但宽容地收：字段缺失就降级，结构不对才报错。返回 {ok, errors, data} */
+function normalizeCuration(input, date) {
+  const errors = [];
+  const sections = Array.isArray(input.sections) ? input.sections : [];
+  if (!sections.length) errors.push('sections 为空');
+  if (sections.length > MAX_SECTIONS) errors.push('分区数超过 ' + MAX_SECTIONS);
+
+  let total = 0;
+  const out = [];
+  for (const s of sections) {
+    const name = str(s && s.name).trim();
+    if (!name) { errors.push('有分区缺 name'); continue; }
+    const items = [];
+    for (const raw of Array.isArray(s.items) ? s.items : []) {
+      const title = str(raw && raw.title).trim();
+      const url = str(raw && raw.url).trim();
+      if (!title) continue;
+      if (!/^https?:\/\//i.test(url)) {
+        errors.push('「' + title.slice(0, 24) + '」缺 http(s) 链接，已丢弃');
+        continue;
+      }
+      if (++total > MAX_ITEMS) { errors.push('条目超过 ' + MAX_ITEMS + ' 条，其余忽略'); break; }
+      items.push({
+        title: title,
+        url: url,
+        summary: str(raw.summary).trim(),
+        tag: ['国内', '国际'].indexOf(str(raw.tag).trim()) >= 0 ? str(raw.tag).trim() : '',
+        realDate: /^\d{4}-\d{2}-\d{2}$/.test(str(raw.realDate).trim()) ? str(raw.realDate).trim() : '',
+      });
+    }
+    if (items.length) {
+      out.push({ name: name, icon: str(s.icon).trim().slice(0, 4), items: items });
+    }
+  }
+  if (!out.length) errors.push('一条可用条目都没有');
+  return errors.length && !out.length
+    ? { ok: false, errors: errors, data: null }
+    : { ok: true, errors: errors, data: { date: date, title: str(input.title).trim() || '全球科研动态简报', sections: out } };
+}
+
+/** 多引擎生成的链接有编造风险：爬虫那条链的 URL 来自 RSS 原文，这路没有保障 */
+async function checkLinks(data) {
+  const jobs = [];
+  for (const s of data.sections) {
+    for (const it of s.items) {
+      jobs.push((async () => {
+        try {
+          const r = await fetch(it.url, {
+            method: 'GET', redirect: 'follow', headers: { 'user-agent': 'news-curation-check' },
+            signal: AbortSignal.timeout(LINK_TIMEOUT),
+          });
+          it.http = r.status;
+          it.linkOk = r.status < 400;
+        } catch (e) {
+          it.http = null;
+          it.linkOk = false;
+        }
+      })());
+    }
+  }
+  await Promise.all(jobs);
+}
+
+function renderCuration(data) {
+  const n = data.sections.reduce((t, s) => t + s.items.length, 0);
+  const dead = data.sections.flatMap((s) => s.items).filter((i) => i.linkOk === false).length;
+  const secs = data.sections.map((s) => `
+  <div class="cur-sec">
+    <h3 class="cur-h3">${s.icon ? `<span class="cur-ic">${esc(s.icon)}</span>` : ''}${esc(s.name)}</h3>
+    <ol class="cur-ol">${s.items.map((it) => `
+      <li class="cur-it${it.linkOk === false ? ' is-dead' : ''}">
+        <a class="cur-t" href="${esc(it.url)}" target="_blank" rel="noopener noreferrer">${esc(it.title)}</a>${
+          it.tag ? `<span class="cur-tag">${esc(it.tag)}</span>` : ''}${
+          it.linkOk === false ? `<span class="cur-warn">链接打不开${it.http ? ' · HTTP ' + it.http : ''}</span>` : ''
+        }${it.summary ? `<p class="cur-sum">${esc(it.summary)}</p>` : ''}${
+          it.realDate ? `<p class="cur-real">真实日期 ${esc(it.realDate)} · 非当日新闻，持续跟踪</p>` : ''}
+      </li>`).join('')}
+    </ol>
+  </div>`).join('');
+
+  return `<section class="cur" aria-labelledby="curH">
+  <style>
+  /* 样式随注入自带：页面 CSS 是渲染时烤进 R2 那份 HTML 的，历史期次里没有 .cur 规则 */
+  .cur{margin:0 0 44px;padding:20px 22px 8px;border:1px solid var(--rule-2,#332c26);
+    background:rgba(226,112,58,.045)}
+  .cur-h{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:4px}
+  .cur-h h2{margin:0;font-family:var(--f-cjk,serif);font-size:20px;font-weight:400;letter-spacing:.14em;
+    color:var(--paper,#f5efe4)}
+  .cur-h .cur-d{font-family:var(--f-num,monospace);font-size:12px;color:var(--faint,#8b7f72)}
+  .cur-h .cur-src{font-size:12px;color:var(--faint,#8b7f72)}
+  .cur-sec{margin-top:18px}
+  .cur-h3{margin:0 0 6px;font-size:13px;font-weight:600;letter-spacing:.06em;color:var(--ember,#e2703a)}
+  .cur-ic{margin-right:6px}
+  .cur-ol{margin:0;padding:0 0 0 20px}
+  .cur-it{margin:0 0 11px;padding-bottom:9px;border-bottom:1px solid var(--rule,#2b2521)}
+  .cur-it:last-child{border-bottom:0}
+  .cur-t{font-size:15px;line-height:1.6;color:var(--paper,#f5efe4);text-decoration:none;
+    border-bottom:1px solid transparent}
+  .cur-t:hover{color:var(--ember,#e2703a)}
+  .cur-tag,.cur-warn{display:inline-block;margin-left:7px;padding:1px 6px;font-size:11px;
+    vertical-align:2px;border:1px solid var(--rule-2,#332c26);color:var(--muted,#b5a89a)}
+  .cur-warn{color:var(--ember,#e2703a);border-color:var(--ember,#e2703a)}
+  .cur-it.is-dead .cur-t{opacity:.62}
+  .cur-sum{margin:5px 0 0;font-size:13px;line-height:1.75;color:var(--muted,#b5a89a);text-wrap:pretty}
+  .cur-real{margin:4px 0 0;font-size:12px;color:var(--faint,#8b7f72)}
+  .cur-foot{margin:14px 0 12px;font-size:12px;color:var(--faint,#8b7f72)}
+  @media (max-width:720px){.cur{padding:16px 14px 4px;margin:0 0 32px}}
+  </style>
+  <header class="cur-h"><h2 id="curH">编辑精选 · ${esc(data.title)}</h2>
+    <span class="cur-d">${esc(data.date)}</span>
+    <span class="cur-src">由 WorkBuddy 每日整理推送 · ${n} 条${dead ? ' · ' + dead + ' 条链接待核实' : ''}</span>
+  </header>${secs}
+  <p class="cur-foot">这一块独立于下方自动抓取的信息流：不经过关键词与 AI 筛选，按原样呈现。</p>
+</section>`;
+}
+
+function injectCuration(html, data) {
+  const block = renderCuration(data);
+  const ph = html.match(/<div id="brief-curation"[^>]*><\/div>/);
+  if (ph) return html.replace(ph[0], () => block);
+  const m = html.match(/<main\b[^>]*>/);           // 旧期次没有占位，就插到正文最前面
+  if (m) return html.replace(m[0], () => m[0] + block);
+  return insertBeforeBody(html, block);
+}
+
+function str(v) {
+  return v === null || v === undefined ? '' : String(v);
+}
+
+function esc(v) {
+  return str(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function json(obj, status = 200) {
+  return new Response(JSON.stringify(obj, null, 2), {
+    status: status,
+    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+  });
 }
 
 const WELCOME = page('归档索引', '<p class="empty">还没有任何归档。等 TrendRadar 跑完一次并上传后，这里就会出现内容。</p>');
