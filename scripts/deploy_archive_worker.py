@@ -79,6 +79,16 @@ def read_bindings():
             keep.append({'type': 'json', 'name': b['name'], 'json': b.get('json')})
         elif t == 'kv_namespace':
             keep.append({'type': 'kv_namespace', 'name': b['name'], 'namespace_id': b.get('namespace_id')})
+        elif t == 'secret_text':
+            # 上传端点不接受"只声明不给值"的密钥（10021 invalid or missing text
+            # property），而密钥值又读不回来 —— 所以部署方必须自己带着它。
+            val = (os.environ.get(b['name']) or '').strip()
+            if not val:
+                sys.exit('线上有密钥绑定 %s，但本环境没有同名变量。'
+                         '请在 GitHub Secrets 里加一条同名 Secret（值就是那个推送口令），'
+                         '并在 workflow 的 env 里透传进来；否则要么带着值部署、'
+                         '要么整块丢掉该绑定让 /curation 变 501。' % b['name'])
+            keep.append({'type': 'secret_text', 'name': b['name'], 'text': val})
         else:
             sys.exit('未处理的绑定类型 %s（%s），人工确认后再部署' % (t, b.get('name')))
     return res, keep
